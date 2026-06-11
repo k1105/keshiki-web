@@ -1,14 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { findClosestColor, hslToHex, type GlazeColor } from "@/lib/colors";
 
 export default function HslSliderPicker({
   selected,
   onSelect,
+  onPreviewColor,
 }: {
   selected: GlazeColor | null;
   onSelect: (c: GlazeColor) => void;
+  // 編集中の「指定した色」を通知する。null で編集モード終了
+  onPreviewColor?: (hex: string | null) => void;
 }) {
   // スライダーは「指定したい色」を保持し、最も近いテストピースへ写像する
   const [h, setH] = useState(selected?.hsl.h ?? 160);
@@ -17,10 +20,20 @@ export default function HslSliderPicker({
 
   const hex = hslToHex(h, s, l);
 
+  // 編集モードに入った時点で指定色をプレビューへ、抜けるときに解除
+  const previewRef = useRef(onPreviewColor);
+  previewRef.current = onPreviewColor;
+  const initialHexRef = useRef(hex);
+  useEffect(() => {
+    previewRef.current?.(initialHexRef.current);
+    return () => previewRef.current?.(null);
+  }, []);
+
   const update = (nh: number, ns: number, nl: number) => {
     setH(nh);
     setS(ns);
     setL(nl);
+    onPreviewColor?.(hslToHex(nh, ns, nl));
     const closest = findClosestColor(hslToHex(nh, ns, nl));
     if (closest) onSelect(closest);
   };

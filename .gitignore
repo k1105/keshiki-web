@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local-only symlink to large asset dir (breaks Vercel build)
+/public/test-piece

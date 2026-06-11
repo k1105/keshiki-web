@@ -813,6 +813,43 @@ body {
   color: var(--accent);
 }
 
+/* 適用ボタン（未適用の釉薬があるときだけプレビュー内に表示） */
+.preview-apply-btn {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 20px;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 999px;
+  background: rgba(31, 29, 26, 0.78);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: inherit;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+  z-index: 5;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.preview-apply-btn:hover {
+  background: rgba(31, 29, 26, 0.92);
+  transform: translateX(-50%) translateY(-1px);
+}
+.preview-apply-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  flex-shrink: 0;
+}
+
 /* 3D canvas fills its container */
 .vessel-canvas {
   width: 100%;

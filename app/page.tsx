@@ -120,6 +120,12 @@ export default function Home() {
   const [glaze, setGlaze] = useState<GlazeColor | null>(() =>
     findClosestColor("#2f6d5f")
   );
+  // プレビューに反映済みの釉薬。「適用」ボタン押下時のみ glaze から同期する
+  const [appliedGlaze, setAppliedGlaze] = useState<GlazeColor | null>(() =>
+    findClosestColor("#2f6d5f")
+  );
+  // HSLスライダー編集中の「指定した色」。設定中はプレビューへリアルタイムに単色で反映する
+  const [livePreviewHex, setLivePreviewHex] = useState<string | null>(null);
   const [colorMode, setColorMode] = useState<ColorMode>("wheel");
 
   const [mode, setMode] = useState<Mode>("visual");
@@ -167,6 +173,17 @@ export default function Home() {
     setShape("custom");
     setShapeLabel("自由形状（一筆描き）");
     setSelectedShapeOption(null);
+  };
+
+  // 色編集中は常に適用可能（単色プレビューからテストピースへ戻すため）
+  const pendingGlaze =
+    glaze && (livePreviewHex !== null || glaze.id !== appliedGlaze?.id)
+      ? glaze
+      : null;
+
+  const applyGlaze = () => {
+    if (pendingGlaze) setAppliedGlaze(pendingGlaze);
+    setLivePreviewHex(null);
   };
 
   return (
@@ -304,7 +321,11 @@ export default function Home() {
                 {colorMode === "wheel" ? (
                   <ColorWheel selected={glaze} onSelect={setGlaze} />
                 ) : (
-                  <HslSliderPicker selected={glaze} onSelect={setGlaze} />
+                  <HslSliderPicker
+                    selected={glaze}
+                    onSelect={setGlaze}
+                    onPreviewColor={setLivePreviewHex}
+                  />
                 )}
               </div>
 
@@ -537,11 +558,20 @@ export default function Home() {
               <VesselCanvas
                 shape={shape}
                 custom={customVessel}
-                texturePath={glaze?.path ?? null}
-                hex={glaze?.hex ?? null}
+                texturePath={livePreviewHex ? null : (appliedGlaze?.path ?? null)}
+                hex={livePreviewHex ?? appliedGlaze?.hex ?? null}
                 gloss={gloss}
                 tone={tone}
               />
+              {pendingGlaze && (
+                <button className="preview-apply-btn" onClick={applyGlaze}>
+                  <span
+                    className="preview-apply-swatch"
+                    style={{ backgroundColor: pendingGlaze.hex }}
+                  />
+                  適用
+                </button>
+              )}
             </div>
             <div className="preview-meta-info">
               <div>
@@ -549,7 +579,13 @@ export default function Home() {
               </div>
               <div>
                 <span>釉薬ピース:</span>{" "}
-                <span>{glaze ? `${glaze.id}.JPG` : "未選択"}</span>
+                <span>
+                  {livePreviewHex
+                    ? `未確定（${livePreviewHex} を編集中）`
+                    : appliedGlaze
+                      ? `${appliedGlaze.id}.JPG`
+                      : "未選択"}
+                </span>
               </div>
             </div>
           </div>
