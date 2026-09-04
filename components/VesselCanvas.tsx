@@ -13,6 +13,7 @@ import {
 type GlazeProps = {
   texturePath: string | null;
   hex: string | null;
+  dissolveKey: string;
   gloss: number; // 0-100
   tone: number; // 0-100
 };
@@ -144,10 +145,12 @@ type GlazeTransition = {
   uniforms: GlazeUniforms;
 };
 
-// 釉薬の変更を検知してテクスチャを読み込み、ディゾルブの進行を駆動する
+// 釉薬の変更を検知してテクスチャを読み込み、ディゾルブの進行を駆動する。
+// dissolveKey が変わったときは単色同士でもディゾルブする
 function useGlazeTransition(
   texturePath: string | null,
-  hex: string | null
+  hex: string | null,
+  dissolveKey: string
 ): GlazeTransition {
   const uniforms = useMemo<GlazeUniforms>(
     () => ({
@@ -163,8 +166,9 @@ function useGlazeTransition(
   const hexRef = useRef(hex);
   hexRef.current = hex;
 
-  // ディゾルブはテクスチャ⇄単色モードの切り替え時のみ。
-  // 単色モード中の hex 変化は下の効果でその場再描画する（リアルタイム反映）
+  // ディゾルブはテクスチャの切り替え時と dissolveKey の変化時のみ。
+  // 同じ dissolveKey のまま hex が変わる場合（スライダー編集中）は
+  // 下の効果でその場再描画する（リアルタイム反映）
   useEffect(() => {
     let cancelled = false;
 
@@ -200,7 +204,7 @@ function useGlazeTransition(
     return () => {
       cancelled = true;
     };
-  }, [texturePath, uniforms]);
+  }, [texturePath, dissolveKey, uniforms]);
 
   useEffect(() => {
     if (texturePath) return;
@@ -287,7 +291,11 @@ function Vessel({
     return spec.smooth ? new THREE.SplineCurve(v).getPoints(48) : v;
   }, [spec]);
 
-  const transition = useGlazeTransition(glaze.texturePath, glaze.hex);
+  const transition = useGlazeTransition(
+    glaze.texturePath,
+    glaze.hex,
+    glaze.dissolveKey
+  );
   const mat = {
     transition,
     hex: glaze.hex,
@@ -356,6 +364,8 @@ export type VesselCanvasProps = {
   custom?: CustomVessel | null;
   texturePath: string | null;
   hex: string | null;
+  /** 変化したときに単色同士でもディゾルブする。未指定なら hex 変化はその場再描画 */
+  dissolveKey?: string;
   gloss?: number;
   tone?: number;
   autoRotate?: boolean;
@@ -366,6 +376,7 @@ export default function VesselCanvas({
   custom = null,
   texturePath,
   hex,
+  dissolveKey = "",
   gloss = 70,
   tone = 60,
   autoRotate = true,
@@ -385,7 +396,7 @@ export default function VesselCanvas({
       <Vessel
         shape={shape}
         custom={custom}
-        glaze={{ texturePath, hex, gloss, tone }}
+        glaze={{ texturePath, hex, dissolveKey, gloss, tone }}
       />
       <ContactShadows
         position={[0, bottomY, 0]}

@@ -34,7 +34,7 @@ body {
 .app {
   max-width: 1180px;
   margin: 0 auto;
-  padding: 32px 28px 80px;
+  padding: 32px 28px 120px; /* 下端は固定の Prev / Next バー分を空ける */
   position: relative;
   z-index: 10;
 }
@@ -59,56 +59,55 @@ body {
   margin-right: 10px;
   box-shadow: 0 0 10px rgba(44, 89, 80, 0.5);
 }
-.meta {
-  color: var(--ink-soft);
-  font-size: 12px;
-  font-weight: 500;
-}
-
-/* Stepper */
+/* Stepper (インジケーター。クリックでは遷移しない) */
 .stepper {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
+  gap: 12px;
   margin-bottom: 32px;
-  background: var(--paper);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.4);
-  border-radius: var(--radius);
-  padding: 12px;
-  box-shadow: var(--shadow);
+  padding: 0 4px;
 }
 .step {
-  display: flex; align-items: center; gap: 12px;
-  padding: 10px 14px;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: all .25s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 2px 0;
+  position: relative;
+  color: var(--ink-soft);
   user-select: none;
+  transition: color .25s;
 }
-.step:hover { background: rgba(255, 255, 255, 0.25); }
-.step.active {
-  background: rgba(255, 255, 255, 0.5);
-  box-shadow: 0 4px 12px rgba(44, 89, 80, 0.05);
+/* 上辺の細いバーで進捗を示す */
+.step::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--line-soft);
+  transition: background .3s;
 }
-.step.done .num { background: var(--accent); color: white; border-color: var(--accent); }
-.step.active .num { border-color: var(--accent); color: var(--accent); background: white; }
+.step.done::before,
+.step.active::before { background: var(--accent); }
+.step.active { color: var(--ink); }
+.step.done { color: var(--ink); }
 .step .num {
-  width: 28px; height: 28px;
+  width: 22px; height: 22px;
   border: 1.5px solid var(--line);
   border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  font-size: 12px; font-weight: 600;
-  background: rgba(255, 255, 255, 0.4);
+  font-size: 11px; font-weight: 600;
+  color: var(--ink-soft);
   transition: all .2s;
   flex-shrink: 0;
 }
+.step.done .num { background: var(--accent); color: white; border-color: var(--accent); }
+.step.active .num { border-color: var(--accent); color: var(--accent); }
 .step .label {
   display: flex; flex-direction: column;
+  line-height: 1.35;
 }
-.step .label .small { font-size: 11px; color: var(--ink-soft); }
+.step .label .small { font-size: 10px; color: var(--ink-soft); letter-spacing: .04em; }
 .step .label .ttl { font-size: 13px; font-weight: 500; }
+.step.active .label .ttl { font-weight: 700; }
 
 /* Panels */
 .panel {
@@ -454,7 +453,25 @@ body {
 }
 .mood-suggest .chip { font-size: 12px; padding: 4px 10px; }
 
-/* Step 3 */
+/* Step 1: 素地・焼成雰囲気 */
+.firing-fields { margin-top: 28px; }
+.option-grid.clay-grid { grid-template-columns: repeat(3, 1fr); }
+.clay-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.clay-swatch {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: inset 0 -3px 6px rgba(0, 0, 0, 0.08), inset 0 2px 4px rgba(255, 255, 255, 0.5);
+}
+@media (max-width: 640px) {
+  .option-grid.clay-grid { grid-template-columns: 1fr; }
+}
 .two-col {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -525,23 +542,83 @@ body {
   font-weight: 500;
 }
 
-/* Result modal */
-.result {
-  display: grid;
-  grid-template-columns: 1.1fr 1fr;
-  gap: 36px;
-}
-.result-visual {
-  background: rgba(255, 255, 255, 0.25);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.4);
-  border-radius: var(--radius);
-  display: flex; align-items: center; justify-content: center;
-  min-height: 360px;
+/* Step 3: 焼成パネル。結果を主役にするため器を全幅・大きく表示する */
+.firing-hero {
   position: relative;
+  height: 520px;
+  margin: -8px 0 28px;
+  border-radius: var(--radius);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  background:
+    radial-gradient(ellipse at 50% 70%, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0.1) 60%, transparent 75%),
+    rgba(255, 255, 255, 0.18);
   overflow: hidden;
-  box-shadow: inset 0 2px 8px rgba(255,255,255,0.4);
+  box-shadow: inset 0 2px 12px rgba(0, 0, 0, 0.04);
+  transition: box-shadow .8s ease;
+}
+/* 焼成中: 窯の熱を思わせる暖色の揺らぎ */
+.firing-hero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at 50% 95%, rgba(214, 120, 60, 0.35), transparent 60%);
+  opacity: 0;
+  transition: opacity .8s ease;
+}
+.firing-hero.is-generating::after {
+  opacity: 1;
+  animation: kilnGlow 2.4s ease-in-out infinite;
+}
+@keyframes kilnGlow {
+  0%, 100% { opacity: .45; }
+  50% { opacity: 1; }
+}
+.firing-hero.is-done {
+  box-shadow: inset 0 2px 12px rgba(0, 0, 0, 0.04), 0 20px 50px rgba(44, 89, 80, 0.12);
+}
+.firing-hero .firing-status {
+  position: absolute;
+  left: 18px;
+  top: 18px;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 4px 14px rgba(31, 29, 26, 0.06);
+  white-space: nowrap;
+  max-width: calc(100% - 36px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 13px;
+  padding: 10px 20px;
+  pointer-events: none;
+}
+.firing-hero.is-done .firing-status {
+  background: rgba(255, 255, 255, 0.9);
+  animation: doneReveal .6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes doneReveal {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (max-width: 768px) {
+  .firing-hero { height: 380px; }
+}
+.firing-body {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.recipe-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 36px;
+}
+.recipe-block-wide {
+  grid-column: 1 / -1;
+}
+@media (max-width: 640px) {
+  .recipe-grid { grid-template-columns: 1fr; }
 }
 .recipe {
   font-size: 12px;
@@ -581,13 +658,7 @@ body {
   accent-color: var(--accent);
 }
 
-/* Nav buttons */
-.nav {
-  display: flex; justify-content: space-between;
-  margin-top: 32px;
-  padding-top: 24px;
-  border-top: 1px solid var(--line-soft);
-}
+/* Buttons */
 .btn {
   padding: 10px 22px;
   border-radius: var(--radius-sm);
@@ -625,121 +696,77 @@ body {
   color: var(--ink);
   background: rgba(255, 255, 255, 0.25);
 }
-
-/* Floating Firing Button */
-.floating-fire-btn {
-  position: fixed;
-  bottom: 32px;
-  right: 32px;
-  z-index: 999;
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+.btn.fire {
   background: linear-gradient(135deg, #2c5950 0%, #3e7b6d 50%, #5a8a9d 100%);
   background-size: 200% 200%;
   animation: flowGradient 6s ease infinite;
   color: white;
   border: none;
   border-radius: 50px;
-  padding: 16px 36px;
-  font-size: 16px;
-  font-weight: 600;
-  display: flex;
+  padding: 12px 30px;
+  font-size: 15px;
+  display: inline-flex;
   align-items: center;
   gap: 8px;
   box-shadow: 0 10px 30px rgba(44, 89, 80, 0.25), 0 0 20px rgba(90, 138, 157, 0.2);
-  cursor: pointer;
-  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease;
-  font-family: inherit;
 }
-.floating-fire-btn:hover {
+.btn.fire:hover {
   transform: translateY(-2px) scale(1.02);
   box-shadow: 0 14px 35px rgba(44, 89, 80, 0.35), 0 0 25px rgba(90, 138, 157, 0.35);
 }
-.floating-fire-btn:active {
+.btn.fire:active {
   transform: translateY(1px);
 }
-
 @keyframes flowGradient {
   0% { background-position: 0% 50%; }
   50% { background-position: 100% 50%; }
   100% { background-position: 0% 50%; }
 }
 
-/* Firing Result Modal Overlay */
-.firing-modal {
+/* 画面下に固定した Prev / Next バー */
+.step-nav {
   position: fixed;
-  top: 0;
   left: 0;
-  width: 100vw;
-  height: 100vh;
-  z-index: 10000;
+  right: 0;
+  bottom: 0;
+  z-index: 999;
+  display: flex;
+  justify-content: center;
+  padding: 14px 28px;
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(20px) saturate(120%);
+  -webkit-backdrop-filter: blur(20px) saturate(120%);
+  border-top: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow: 0 -10px 30px rgba(31, 29, 26, 0.06);
+}
+.step-nav-inner {
+  width: 100%;
+  max-width: 1180px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+.step-nav-right {
   display: flex;
   align-items: center;
-  justify-content: center;
-  opacity: 0;
-  visibility: hidden;
-  transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.4s;
+  gap: 14px;
 }
-.firing-modal.active {
-  opacity: 1;
-  visibility: visible;
+.step-nav .btn {
+  padding: 12px 26px;
+  font-size: 14px;
 }
-.firing-modal-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(31, 29, 26, 0.45);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+.step-nav .btn.fire {
+  padding: 12px 30px;
 }
-.firing-modal-content {
-  position: relative;
-  background: rgba(255, 255, 255, 0.7);
-  backdrop-filter: blur(32px) saturate(130%);
-  -webkit-backdrop-filter: blur(32px) saturate(130%);
-  width: 90%;
-  max-width: 960px;
-  max-height: 85vh;
-  overflow-y: auto;
-  border-radius: var(--radius);
-  padding: 36px;
-  box-shadow: 0 30px 70px rgba(31, 29, 26, 0.15), inset 0 1px 0 rgba(255,255,255,0.5);
-  transform: translateY(40px) scale(0.96);
-  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-  z-index: 10001;
-  border: 1px solid rgba(255, 255, 255, 0.45);
-}
-.firing-modal.active .firing-modal-content {
-  transform: translateY(0) scale(1);
-}
-.firing-modal-content h2 {
-  margin: 0 0 4px;
-  font-size: 24px;
-  font-weight: 700;
-}
-.firing-modal-content .sub {
+.step-nav-hint {
+  font-size: 12px;
   color: var(--ink-soft);
-  font-size: 13px;
-  margin-bottom: 28px;
-}
-.firing-modal-close {
-  position: absolute;
-  top: 20px;
-  right: 24px;
-  background: none;
-  border: none;
-  font-size: 32px;
-  color: var(--ink-soft);
-  cursor: pointer;
-  transition: color 0.2s;
-  line-height: 1;
-}
-.firing-modal-close:hover {
-  color: var(--ink);
-}
-.modal-actions {
-  margin-top: 24px;
-  text-align: center;
 }
 
 /* Two-column layout */
@@ -811,43 +838,6 @@ body {
 .preview-meta-info span {
   font-weight: 700;
   color: var(--accent);
-}
-
-/* 適用ボタン（未適用の釉薬があるときだけプレビュー内に表示） */
-.preview-apply-btn {
-  position: absolute;
-  left: 50%;
-  bottom: 14px;
-  transform: translateX(-50%);
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 20px;
-  border: 1px solid rgba(255, 255, 255, 0.5);
-  border-radius: 999px;
-  background: rgba(31, 29, 26, 0.78);
-  color: #fff;
-  font-size: 13px;
-  font-weight: 700;
-  font-family: inherit;
-  letter-spacing: 0.05em;
-  cursor: pointer;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
-  z-index: 5;
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.preview-apply-btn:hover {
-  background: rgba(31, 29, 26, 0.92);
-  transform: translateX(-50%) translateY(-1px);
-}
-.preview-apply-swatch {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.6);
-  flex-shrink: 0;
 }
 
 /* 3D canvas fills its container */
@@ -1024,4 +1014,110 @@ body {
     width: 100%;
     position: static;
   }
+}
+
+/* 焼成結果: 本生成 (RunPod) の進行状態と生成結果 */
+.result-column {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+.firing-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: fit-content;
+  padding: 9px 18px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.75);
+  border: 1px solid var(--line-soft);
+}
+.firing-status.is-error {
+  color: #8a3a2a;
+  border-color: rgba(168, 98, 58, 0.35);
+}
+.firing-status.is-done {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: rgba(44, 89, 80, 0.2);
+}
+.firing-spinner {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 2px solid var(--line);
+  border-top-color: var(--accent);
+  animation: firing-spin 0.9s linear infinite;
+}
+@keyframes firing-spin {
+  to { transform: rotate(360deg); }
+}
+.gen-gallery {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.gen-thumb {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 5px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.3);
+  cursor: pointer;
+  font-family: inherit;
+  transition: all .25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.gen-thumb:hover { border-color: rgba(44, 89, 80, 0.35); }
+.gen-thumb.selected {
+  border-color: var(--accent);
+  background: rgba(255, 255, 255, 0.7);
+}
+.gen-thumb img {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: calc(var(--radius-sm) - 3px);
+  display: block;
+}
+.gen-thumb-caption {
+  font-size: 10px;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+.gen-error {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 14px 16px;
+  border: 1px solid rgba(168, 98, 58, 0.3);
+  border-radius: var(--radius-sm);
+  background: rgba(168, 98, 58, 0.06);
+  font-size: 12px;
+}
+.gen-error-title {
+  font-weight: 600;
+  color: #8a3a2a;
+}
+.gen-error-message {
+  color: var(--ink-soft);
+  word-break: break-all;
+  white-space: pre-wrap;
+}
+.prompt-used {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10.5px;
+  line-height: 1.7;
+  color: var(--ink-soft);
+  word-break: break-all;
+  background: rgba(255, 255, 255, 0.4);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
 }

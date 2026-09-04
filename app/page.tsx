@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import ColorWheel from "@/components/ColorWheel";
-import FiringModal from "@/components/FiringModal";
+import FiringPanel from "@/components/FiringPanel";
 import HslSliderPicker from "@/components/HslSliderPicker";
 import ProfileSketcher from "@/components/ProfileSketcher";
 import VesselCanvas from "@/components/VesselCanvas";
+import { CLAY_BODIES, clayByKey, type ClayKey } from "@/lib/clay";
 import { findClosestColor, type GlazeColor } from "@/lib/colors";
 import {
   CONCRETE_SHAPES,
@@ -16,11 +17,15 @@ import {
 } from "@/lib/vessels";
 
 const STEPS = [
-  { n: 1, ttl: "形を選ぶ" },
+  { n: 1, ttl: "形と焼き方を選ぶ" },
   { n: 2, ttl: "つくり方を選ぶ" },
-  { n: 3, ttl: "焼き方を選ぶ" },
+  { n: 3, ttl: "焼成" },
   { n: 4, ttl: "調整", small: "Step 4 (option)" },
 ];
+
+// 素地プレビュー（素焼き）の質感。釉薬なしなのでマットに固定
+const CLAY_GLOSS = 6;
+const CLAY_TONE = 50;
 
 function ShapeIcon({ shape }: { shape: ShapeKey | "random" }) {
   switch (shape) {
@@ -120,11 +125,7 @@ export default function Home() {
   const [glaze, setGlaze] = useState<GlazeColor | null>(() =>
     findClosestColor("#2f6d5f")
   );
-  // プレビューに反映済みの釉薬。「適用」ボタン押下時のみ glaze から同期する
-  const [appliedGlaze, setAppliedGlaze] = useState<GlazeColor | null>(() =>
-    findClosestColor("#2f6d5f")
-  );
-  // HSLスライダー編集中の「指定した色」。設定中はプレビューへリアルタイムに単色で反映する
+  // HSLスライダー編集中の「指定した色」。編集中はプレビューをディゾルブなしでその場更新する
   const [livePreviewHex, setLivePreviewHex] = useState<string | null>(null);
   const [colorMode, setColorMode] = useState<ColorMode>("wheel");
 
@@ -139,7 +140,8 @@ export default function Home() {
     "きょうは雨上がりの森みたいな、静かで少し湿った感じな気分です。"
   );
 
-  const [clay, setClay] = useState("陶器");
+  const [clayKey, setClayKey] = useState<ClayKey>("stoneware-white");
+  const clay = clayByKey(clayKey);
   const [atmosphere, setAtmosphere] = useState("還元焼成");
 
   const [tone, setTone] = useState(60);
@@ -149,7 +151,10 @@ export default function Home() {
   const [temp, setTemp] = useState(1230);
   const [thickness, setThickness] = useState(55);
 
-  const [modalOpen, setModalOpen] = useState(false);
+  // 焼成: 「焼成する」を押すたびに fireKey を進めて Step 3 で生成を走らせる
+  const [fireKey, setFireKey] = useState(0);
+  const [firedTexture, setFiredTexture] = useState<string | null>(null);
+  const [firing, setFiring] = useState(false);
 
   const goTo = (n: number) => {
     setStep(n);
@@ -175,34 +180,53 @@ export default function Home() {
     setSelectedShapeOption(null);
   };
 
-  // 色編集中は常に適用可能（単色プレビューからテストピースへ戻すため）
-  const pendingGlaze =
-    glaze && (livePreviewHex !== null || glaze.id !== appliedGlaze?.id)
-      ? glaze
-      : null;
-
-  const applyGlaze = () => {
-    if (pendingGlaze) setAppliedGlaze(pendingGlaze);
-    setLivePreviewHex(null);
+  const startFiring = () => {
+    setFiredTexture(null);
+    setFireKey((k) => k + 1);
+    goTo(3);
   };
+
+  // Step 1 では釉薬をかける前の素地を表示し、Step 2 では選択中の釉薬の単色（DB 上の色）を
+  // 即座に器に載せる。テストピース画像はテクスチャとして使わない。
+  // 焼成後 (Step 3 以降) は生成テクスチャを載せる
+  const showingClay = step === 1;
+  const preview = showingClay
+    ? {
+        texturePath: null,
+        hex: clay.hex,
+        dissolveKey: `clay:${clay.key}`,
+        gloss: CLAY_GLOSS,
+        tone: CLAY_TONE,
+      }
+    : {
+        texturePath: step >= 3 ? firedTexture : null,
+        hex: glaze?.hex ?? null,
+        dissolveKey:
+          livePreviewHex !== null ? "live" : `glaze:${glaze?.id ?? "none"}`,
+        gloss,
+        tone,
+      };
+  const previewTitle = showingClay
+    ? "素地プレビュー"
+    : step >= 3 && firedTexture
+      ? "焼き上がりプレビュー"
+      : "施釉プレビュー";
 
   return (
     <div className="app">
       <div className="header">
         <div className="brand">
           <span className="dot" />
-          keshiki — 釉薬焼成シミュレーター
+          Glazescape Project
         </div>
-        <div className="meta">prototype v0.2 (Next.js)</div>
       </div>
 
-      {/* Stepper */}
+      {/* Stepper (インジケーター。移動は画面下の Prev / Next で行う) */}
       <div className="stepper">
         {STEPS.map((s) => (
           <div
             key={s.n}
             className={`step ${step === s.n ? "active" : ""} ${step > s.n ? "done" : ""}`}
-            onClick={() => goTo(s.n)}
           >
             <div className="num">{s.n}</div>
             <div className="label">
@@ -217,8 +241,10 @@ export default function Home() {
         <div className="app-main">
           {/* Step 1: 形 */}
           <div className={`panel ${step === 1 ? "active" : ""}`}>
-            <h2>形を選ぶ</h2>
-            <p className="sub">焼き上がりの器の形を選びます。</p>
+            <h2>形と焼き方を選ぶ</h2>
+            <p className="sub">
+              器の形と素地、焼成雰囲気を選びます。プレビューは釉薬をかける前の素地の状態です。
+            </p>
 
             <div className="filter-chips picker-tabs">
               <span
@@ -252,11 +278,46 @@ export default function Home() {
               <ProfileSketcher onShapeDrawn={pickCustomShape} />
             )}
 
-            <div className="nav">
-              <div />
-              <button className="btn primary" onClick={() => goTo(2)}>
-                つくり方を選ぶ →
-              </button>
+            <div className="field firing-fields">
+              <div className="field-label">素地</div>
+              <div className="option-grid clay-grid">
+                {CLAY_BODIES.map((c) => (
+                  <div
+                    key={c.key}
+                    className={`option-card clay-card ${clayKey === c.key ? "selected" : ""}`}
+                    onClick={() => setClayKey(c.key)}
+                  >
+                    <span
+                      className="clay-swatch"
+                      style={{ backgroundColor: c.hex }}
+                    />
+                    <div>
+                      <div className="ttl">{c.name}</div>
+                      <div className="desc">{c.desc}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="field">
+              <div className="field-label">焼成雰囲気</div>
+              <div className="option-grid">
+                <div
+                  className={`option-card ${atmosphere === "酸化焼成" ? "selected" : ""}`}
+                  onClick={() => setAtmosphere("酸化焼成")}
+                >
+                  <div className="ttl">酸化焼成</div>
+                  <div className="desc">明るく安定した発色。再現性が高い。</div>
+                </div>
+                <div
+                  className={`option-card ${atmosphere === "還元焼成" ? "selected" : ""}`}
+                  onClick={() => setAtmosphere("還元焼成")}
+                >
+                  <div className="ttl">還元焼成</div>
+                  <div className="desc">深み・変化・渋みが出やすい。</div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -438,74 +499,35 @@ export default function Home() {
                 </div>
               </div>
             </div>
-
-            <div className="nav">
-              <button className="btn" onClick={() => goTo(1)}>
-                ← 形を選ぶ
-              </button>
-              <button className="btn primary" onClick={() => goTo(3)}>
-                焼き方を選ぶ →
-              </button>
-            </div>
           </div>
 
-          {/* Step 3: 焼き方 */}
+          {/* Step 3: 焼成 */}
           <div className={`panel ${step === 3 ? "active" : ""}`}>
-            <h2>焼き方を選ぶ</h2>
-            <p className="sub">
-              素地と焼成雰囲気を指定します。発色や質感に大きく影響します。
-            </p>
-
-            <div className="two-col">
-              <div>
-                <div className="field-label">素地</div>
-                <div className="option-grid">
-                  <div
-                    className={`option-card ${clay === "陶器" ? "selected" : ""}`}
-                    onClick={() => setClay("陶器")}
-                  >
-                    <div className="ttl">陶器</div>
-                    <div className="desc">1200℃前後で焼成。素朴で温かい印象。</div>
-                  </div>
-                  <div
-                    className={`option-card ${clay === "磁器" ? "selected" : ""}`}
-                    onClick={() => setClay("磁器")}
-                  >
-                    <div className="ttl">磁器</div>
-                    <div className="desc">1280℃以上で焼成。緻密で透光性あり。</div>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <div className="field-label">焼成雰囲気</div>
-                <div className="option-grid">
-                  <div
-                    className={`option-card ${atmosphere === "酸化焼成" ? "selected" : ""}`}
-                    onClick={() => setAtmosphere("酸化焼成")}
-                  >
-                    <div className="ttl">酸化焼成</div>
-                    <div className="desc">明るく安定した発色。再現性が高い。</div>
-                  </div>
-                  <div
-                    className={`option-card ${atmosphere === "還元焼成" ? "selected" : ""}`}
-                    onClick={() => setAtmosphere("還元焼成")}
-                  >
-                    <div className="ttl">還元焼成</div>
-                    <div className="desc">深み・変化・渋みが出やすい。</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="nav">
-              <button className="btn" onClick={() => goTo(2)}>
-                ← つくり方を選ぶ
-              </button>
-              <button className="btn primary" onClick={() => goTo(4)}>
-                調整する →
-              </button>
-            </div>
+            <FiringPanel
+              active={step === 3}
+              fireKey={fireKey}
+              shape={shape}
+              custom={customVessel}
+              gloss={gloss}
+              tone={tone}
+              ui={{
+                mode,
+                glaze,
+                expression,
+                transparency,
+                glossiness,
+                styleName,
+                styleColor,
+                styleTexture,
+                mood,
+                clay: clay.name,
+                atmosphere,
+                temp,
+              }}
+              thickness={thickness}
+              onTexture={setFiredTexture}
+              onGeneratingChange={setFiring}
+            />
           </div>
 
           {/* Step 4: 調整 */}
@@ -540,76 +562,93 @@ export default function Home() {
                 </div>
               ))}
             </div>
-
-            <div className="nav">
-              <button className="btn" onClick={() => goTo(3)}>
-                ← 焼き方を選ぶ
-              </button>
-              <button className="btn primary">レシピを保存</button>
-            </div>
           </div>
         </div>
 
-        {/* Persistent Preview Sidebar */}
+        {/* Persistent Preview Sidebar (焼成ステップでは結果を主役にするため非表示) */}
+        {step !== 3 && (
         <div className="app-sidebar">
           <div className="persistent-preview-card">
-            <div className="preview-title">焼き上がりプレビュー</div>
+            <div className="preview-title">{previewTitle}</div>
             <div className="preview-visual">
               <VesselCanvas
                 shape={shape}
                 custom={customVessel}
-                texturePath={livePreviewHex ? null : (appliedGlaze?.path ?? null)}
-                hex={livePreviewHex ?? appliedGlaze?.hex ?? null}
-                gloss={gloss}
-                tone={tone}
+                texturePath={preview.texturePath}
+                hex={preview.hex}
+                dissolveKey={preview.dissolveKey}
+                gloss={preview.gloss}
+                tone={preview.tone}
               />
-              {pendingGlaze && (
-                <button className="preview-apply-btn" onClick={applyGlaze}>
-                  <span
-                    className="preview-apply-swatch"
-                    style={{ backgroundColor: pendingGlaze.hex }}
-                  />
-                  適用
-                </button>
-              )}
             </div>
             <div className="preview-meta-info">
               <div>
                 <span>器の形:</span> <span>{shapeLabel}</span>
               </div>
               <div>
+                <span>素地:</span> <span>{clay.name}</span>
+              </div>
+              <div>
                 <span>釉薬ピース:</span>{" "}
                 <span>
-                  {livePreviewHex
-                    ? `未確定（${livePreviewHex} を編集中）`
-                    : appliedGlaze
-                      ? `${appliedGlaze.id}.JPG`
-                      : "未選択"}
+                  {glaze ? `${glaze.id}（${glaze.hex}）` : "未選択"}
                 </span>
               </div>
             </div>
           </div>
         </div>
+        )}
       </div>
 
-      {/* Floating Firing Button */}
-      <button className="floating-fire-btn" onClick={() => setModalOpen(true)}>
-        <span className="icon">🔥</span>焼成する
-      </button>
-
-      <FiringModal
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        shape={shape}
-        custom={customVessel}
-        glaze={glaze}
-        clay={clay}
-        atmosphere={atmosphere}
-        temp={temp}
-        thickness={thickness}
-        gloss={gloss}
-        tone={tone}
-      />
+      {/* Prev / Next: 1 ステップずつ進む。戻るのは自由 */}
+      <div className="step-nav">
+        <div className="step-nav-inner">
+          <div>
+            {step === 2 && (
+              <button className="btn" onClick={() => goTo(1)}>
+                ← 形と焼き方を選ぶ
+              </button>
+            )}
+            {step === 3 && (
+              <button className="btn" onClick={() => goTo(2)}>
+                ← つくり方を選ぶ
+              </button>
+            )}
+            {step === 4 && (
+              <button className="btn" onClick={() => goTo(3)}>
+                ← 焼成
+              </button>
+            )}
+          </div>
+          <div className="step-nav-right">
+            {step === 1 && (
+              <button className="btn primary" onClick={() => goTo(2)}>
+                つくり方を選ぶ →
+              </button>
+            )}
+            {step === 2 && (
+              <button className="btn fire" onClick={startFiring}>
+                <span className="icon">🔥</span>焼成する
+              </button>
+            )}
+            {step === 3 && (
+              <>
+                {firing && (
+                  <span className="step-nav-hint">焼き上がるまでお待ちください</span>
+                )}
+                <button
+                  className="btn primary"
+                  onClick={() => goTo(4)}
+                  disabled={firing}
+                >
+                  調整する →
+                </button>
+              </>
+            )}
+            {step === 4 && <button className="btn primary">レシピを保存</button>}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

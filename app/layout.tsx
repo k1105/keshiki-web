@@ -15,7 +15,7 @@ const notoSansJp = Noto_Sans_JP({
 });
 
 export const metadata: Metadata = {
-  title: "釉薬焼成シミュレーター — keshiki",
+  title: "Glazescape Project",
   description: "釉薬の色・質感・焼成条件からレシピと焼き上がりをシミュレートするツール",
 };
 
