@@ -209,8 +209,8 @@ export default function ColorWheel({
         tooltip.style.left = `${point.projX}px`;
         tooltip.style.top = `${point.projY - 18}px`;
         tooltip.classList.add("active");
-        const img = tooltip.querySelector("img");
-        if (img) img.src = point.color.path;
+        const swatch = tooltip.querySelector<HTMLElement>(".tooltip-swatch");
+        if (swatch) swatch.style.backgroundColor = point.color.hex;
         const idEl = tooltip.querySelector(".tooltip-id");
         if (idEl) idEl.textContent = point.color.id;
         const hexEl = tooltip.querySelector(".tooltip-hex");
@@ -340,8 +340,7 @@ export default function ColorWheel({
             className="color-wheel"
           />
           <div className="color-tooltip" ref={tooltipRef}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img alt="glaze preview" />
+            <div className="tooltip-swatch" />
             <div className="tooltip-id">-</div>
             <div className="tooltip-hex">-</div>
           </div>
@@ -350,15 +349,15 @@ export default function ColorWheel({
         <div className="selected-preview">
           {selected ? (
             <>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={selected.path}
-                className="selected-preview-img"
-                alt="Selected Glaze"
+              <div
+                className="selected-preview-swatch"
+                style={{ backgroundColor: selected.hex }}
+                role="img"
+                aria-label={`釉薬カラー ${selected.hex}`}
               />
               <div className="selected-preview-info">
                 <div className="selected-preview-title">選択中のテストピース</div>
-                <div className="selected-preview-id">{selected.id}.JPG</div>
+                <div className="selected-preview-id">{selected.id}</div>
                 <div className="selected-preview-meta">
                   <span>
                     カラー:{" "}

@@ -34,7 +34,7 @@ export type FiringPanelProps = {
   onGeneratingChange: (generating: boolean) => void;
 };
 
-// 生成の進行状態。config は本番 API 未設定 (テストピース表示のまま案内を出す)
+// 生成の進行状態。config は本番 API 未設定 (単色表示のまま案内を出す)
 type Phase =
   | "submitting"
   | "queued"
@@ -282,7 +282,7 @@ export default function FiringPanel({
               <div className="gen-error">
                 <div className="gen-error-title">
                   {phase === "config"
-                    ? "本番生成 API が未設定のため、テストピース画像で表示しています"
+                    ? "本番生成 API が未設定のため、選択中の釉薬色を単色で表示しています"
                     : `エラー: ${error.error}`}
                 </div>
                 {error.message && (

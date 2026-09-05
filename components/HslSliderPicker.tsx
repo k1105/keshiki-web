@@ -103,17 +103,17 @@ export default function HslSliderPicker({
       <div className="selected-preview">
         {selected ? (
           <>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={selected.path}
-              className="selected-preview-img"
-              alt="Selected Glaze"
+            <div
+              className="selected-preview-swatch"
+              style={{ backgroundColor: selected.hex }}
+              role="img"
+              aria-label={`釉薬カラー ${selected.hex}`}
             />
             <div className="selected-preview-info">
               <div className="selected-preview-title">
                 最も近いテストピース
               </div>
-              <div className="selected-preview-id">{selected.id}.JPG</div>
+              <div className="selected-preview-id">{selected.id}</div>
               <div className="selected-preview-meta">
                 <span>
                   カラー:{" "}

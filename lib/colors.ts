@@ -5,7 +5,6 @@ export type Hsl = { h: number; s: number; l: number };
 export type GlazeColor = {
   id: string;
   hex: string;
-  path: string;
   hsl: Hsl;
 };
 
@@ -77,7 +76,7 @@ export function hslToHex(h: number, s: number, l: number): string {
 }
 
 export const GLAZE_COLORS: GlazeColor[] = (
-  rawColors as { id: string; hex: string; path: string }[]
+  rawColors as { id: string; hex: string }[]
 ).map((c) => {
   const rgb = hexToRgb(c.hex);
   return { ...c, hsl: rgbToHsl(rgb.r, rgb.g, rgb.b) };
