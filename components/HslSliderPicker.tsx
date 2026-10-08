@@ -7,11 +7,13 @@ export default function HslSliderPicker({
   selected,
   onSelect,
   onPreviewColor,
+  labels,
 }: {
   selected: GlazeColor | null;
   onSelect: (c: GlazeColor) => void;
   // 編集中の「指定した色」を通知する。null で編集モード終了
   onPreviewColor?: (hex: string | null) => void;
+  labels: { hue: string; saturation: string; lightness: string };
 }) {
   // スライダーは「指定したい色」を保持し、最も近いテストピースへ写像する
   const [h, setH] = useState(selected?.hsl.h ?? 160);
@@ -38,108 +40,27 @@ export default function HslSliderPicker({
     if (closest) onSelect(closest);
   };
 
-  const hueStops = Array.from(
-    { length: 13 },
-    (_, i) => `hsl(${i * 30}, ${s}%, ${l}%)`
-  ).join(", ");
-
   const rows = [
-    {
-      label: "色相 H",
-      value: h,
-      max: 360,
-      unit: "°",
-      bg: `linear-gradient(to right, ${hueStops})`,
-      set: (v: number) => update(v, s, l),
-    },
-    {
-      label: "彩度 S",
-      value: s,
-      max: 100,
-      unit: "%",
-      bg: `linear-gradient(to right, hsl(${h}, 0%, ${l}%), hsl(${h}, 100%, ${l}%))`,
-      set: (v: number) => update(h, v, l),
-    },
-    {
-      label: "明度 L",
-      value: l,
-      max: 100,
-      unit: "%",
-      bg: `linear-gradient(to right, hsl(${h}, ${s}%, 0%), hsl(${h}, ${s}%, 50%), hsl(${h}, ${s}%, 100%))`,
-      set: (v: number) => update(h, s, v),
-    },
+    { label: labels.hue, value: h, max: 360, set: (v: number) => update(v, s, l) },
+    { label: labels.saturation, value: s, max: 100, set: (v: number) => update(h, v, l) },
+    { label: labels.lightness, value: l, max: 100, set: (v: number) => update(h, s, v) },
   ];
 
   return (
-    <div className="hsl-picker">
-      <div className="hsl-sliders">
-        {rows.map((row) => (
-          <div className="hsl-slider-row" key={row.label}>
-            <div className="hsl-slider-label">{row.label}</div>
-            <input
-              type="range"
-              min={0}
-              max={row.max}
-              value={row.value}
-              className="hsl-range"
-              style={{ background: row.bg }}
-              onChange={(e) => row.set(Number(e.target.value))}
-            />
-            <div className="hsl-value">
-              {row.value}
-              {row.unit}
-            </div>
-          </div>
-        ))}
-
-        <div className="hsl-spec-row">
-          <span className="hsl-spec-swatch" style={{ backgroundColor: hex }} />
-          <span className="hsl-spec-text">
-            指定した色 <code>{hex}</code> に最も近いテストピースを選択します
-          </span>
-        </div>
-      </div>
-
-      <div className="selected-preview">
-        {selected ? (
-          <>
-            <div
-              className="selected-preview-swatch"
-              style={{ backgroundColor: selected.hex }}
-              role="img"
-              aria-label={`釉薬カラー ${selected.hex}`}
-            />
-            <div className="selected-preview-info">
-              <div className="selected-preview-title">
-                最も近いテストピース
-              </div>
-              <div className="selected-preview-id">{selected.id}</div>
-              <div className="selected-preview-meta">
-                <span>
-                  カラー:{" "}
-                  <span
-                    className="selected-preview-hex"
-                    style={{
-                      backgroundColor: selected.hex,
-                      color: selected.hsl.l > 60 ? "#1f1d1a" : "#ffffff",
-                    }}
-                  >
-                    {selected.hex.toLowerCase()}
-                  </span>
-                </span>
-                <span className="selected-preview-hsl">
-                  HSL: {selected.hsl.h}°, {selected.hsl.s}%, {selected.hsl.l}%
-                </span>
-              </div>
-            </div>
-          </>
-        ) : (
-          <div className="selected-preview-info">
-            <div className="selected-preview-title">最も近いテストピース</div>
-            <div className="selected-preview-id">-</div>
-          </div>
-        )}
-      </div>
+    <div className="hsl-sliders">
+      {rows.map((row) => (
+        <input
+          key={row.label}
+          type="range"
+          className="slider"
+          min={0}
+          max={row.max}
+          value={row.value}
+          aria-label={row.label}
+          title={row.label}
+          onChange={(e) => row.set(Number(e.target.value))}
+        />
+      ))}
     </div>
   );
 }

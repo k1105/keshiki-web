@@ -3,10 +3,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CustomVessel } from "@/lib/vessels";
 
-const W = 340;
-const H = 340;
-const AXIS_X = 56; // 回転軸の x 座標
-const PAD = 14;
+// 描画座標系（デザイン px）。表示サイズは CSS でパネルいっぱいに伸縮する
+const W = 830;
+const H = 830;
+const AXIS_X = W / 2; // 回転軸の x 座標（パネル中央）
+const AXIS_TOP = 96;
+const AXIS_BOTTOM = 766;
+const INK = "#38204b";
+const PINK = "#fc3f9a";
 
 type Pt = { x: number; y: number };
 
@@ -71,15 +75,17 @@ function strokeToVessel(raw: Pt[]): CustomVessel | null {
 
 export default function ProfileSketcher({
   onShapeDrawn,
+  hint,
+  tooShortText,
 }: {
   onShapeDrawn: (v: CustomVessel) => void;
+  hint: string;
+  tooShortText: string;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const strokeRef = useRef<Pt[]>([]);
   const drawingRef = useRef(false);
-  const [status, setStatus] = useState<"empty" | "drawn" | "too-short">(
-    "empty"
-  );
+  const [tooShort, setTooShort] = useState(false);
 
   const redraw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -89,55 +95,27 @@ export default function ProfileSketcher({
 
     // 回転軸
     ctx.beginPath();
-    ctx.setLineDash([5, 5]);
-    ctx.moveTo(AXIS_X, PAD);
-    ctx.lineTo(AXIS_X, H - PAD);
-    ctx.strokeStyle = "rgba(44, 89, 80, 0.45)";
-    ctx.lineWidth = 1.2;
+    ctx.setLineDash([9, 9]);
+    ctx.moveTo(AXIS_X, AXIS_TOP);
+    ctx.lineTo(AXIS_X, AXIS_BOTTOM);
+    ctx.strokeStyle = PINK;
+    ctx.lineWidth = 4;
     ctx.stroke();
     ctx.setLineDash([]);
 
-    ctx.fillStyle = "rgba(44, 89, 80, 0.55)";
-    ctx.font = "10px sans-serif";
-    ctx.textAlign = "left";
-    ctx.save();
-    ctx.translate(AXIS_X - 8, H / 2);
-    ctx.rotate(-Math.PI / 2);
-    ctx.textAlign = "center";
-    ctx.fillText("回転軸", 0, 0);
-    ctx.restore();
-
     const stroke = strokeRef.current;
-    if (stroke.length === 0) {
-      ctx.fillStyle = "rgba(31, 37, 35, 0.35)";
-      ctx.font = "12px sans-serif";
-      ctx.textAlign = "center";
-      ctx.fillText("軸の右側に、器の輪郭（断面）を", (W + AXIS_X) / 2, H / 2 - 10);
-      ctx.fillText("一筆で描いてください", (W + AXIS_X) / 2, H / 2 + 10);
-      return;
-    }
+    if (stroke.length === 0) return;
 
-    const trace = (mirror: boolean) => {
-      ctx.beginPath();
-      stroke.forEach((p, i) => {
-        const x = mirror ? AXIS_X * 2 - p.x : p.x;
-        if (i === 0) ctx.moveTo(x, p.y);
-        else ctx.lineTo(x, p.y);
-      });
-      ctx.stroke();
-    };
-
-    // 鏡映側（シルエットのあたり）
-    ctx.lineWidth = 2;
+    ctx.beginPath();
+    stroke.forEach((p, i) => {
+      if (i === 0) ctx.moveTo(p.x, p.y);
+      else ctx.lineTo(p.x, p.y);
+    });
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
-    ctx.strokeStyle = "rgba(44, 89, 80, 0.18)";
-    trace(true);
-
-    // 描画ストローク
-    ctx.strokeStyle = "#2c5950";
-    ctx.lineWidth = 2.5;
-    trace(false);
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = 3;
+    ctx.stroke();
   }, []);
 
   useEffect(() => {
@@ -150,11 +128,14 @@ export default function ProfileSketcher({
     redraw();
   }, [redraw]);
 
+  // 表示サイズ → 描画座標 (W x H) に換算する
   const toLocal = (e: React.PointerEvent<HTMLCanvasElement>): Pt => {
     const rect = e.currentTarget.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) * W) / rect.width;
+    const y = ((e.clientY - rect.top) * H) / rect.height;
     return {
-      x: Math.min(W - 2, Math.max(AXIS_X, e.clientX - rect.left)),
-      y: Math.min(H - 2, Math.max(2, e.clientY - rect.top)),
+      x: Math.min(W - 2, Math.max(AXIS_X, x)),
+      y: Math.min(H - 2, Math.max(2, y)),
     };
   };
 
@@ -162,6 +143,7 @@ export default function ProfileSketcher({
     e.currentTarget.setPointerCapture(e.pointerId);
     drawingRef.current = true;
     strokeRef.current = [toLocal(e)];
+    setTooShort(false);
     redraw();
   };
 
@@ -181,60 +163,25 @@ export default function ProfileSketcher({
     const vessel = strokeToVessel(strokeRef.current);
     if (vessel) {
       onShapeDrawn(vessel);
-      setStatus("drawn");
     } else {
       strokeRef.current = [];
-      setStatus("too-short");
+      setTooShort(true);
       redraw();
     }
   };
 
-  const clear = () => {
-    strokeRef.current = [];
-    drawingRef.current = false;
-    setStatus("empty");
-    redraw();
-  };
-
   return (
     <div className="sketcher">
-      <div className="sketch-canvas-wrap">
-        <canvas
-          ref={canvasRef}
-          className="sketch-canvas"
-          style={{ width: W, height: H }}
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={onPointerUp}
-          onPointerCancel={onPointerUp}
-        />
-      </div>
-
-      <div className="sketch-side">
-        <div className="sketch-guide">
-          <p>
-            点線の<strong>回転軸</strong>を中心に、描いた線（断面の輪郭）を
-            360°回転させて器の形をつくります。ろくろを挽くイメージで、
-            底から口へ向かって一筆で描いてください。
-          </p>
-          <p className="sketch-hint">
-            描き終わると右のプレビューに3D形状が反映されます。
-            納得がいくまで何度でも描き直せます。
-          </p>
-        </div>
-
-        {status === "drawn" && (
-          <div className="sketch-status ok">3D形状を生成しました</div>
-        )}
-        {status === "too-short" && (
-          <div className="sketch-status warn">
-            線が短すぎます。もう少し長く描いてください
-          </div>
-        )}
-
-        <button className="btn" onClick={clear}>
-          クリア
-        </button>
+      <canvas
+        ref={canvasRef}
+        className="sketch-canvas"
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+      />
+      <div className={`sketch-hint ${tooShort ? "is-warn" : ""}`}>
+        {tooShort ? tooShortText : hint}
       </div>
     </div>
   );

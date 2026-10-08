@@ -20,12 +20,8 @@ type WheelPoint = {
   depth: number;
 };
 
-const FILTERS: { key: Filter; label: string }[] = [
-  { key: "all", label: "すべて" },
-  { key: "light", label: "明るめ" },
-  { key: "medium", label: "中間" },
-  { key: "dark", label: "暗め" },
-];
+// 明度フィルタは円盤の上下左右に置く（上 = 明るめ、下 = 暗め）
+const FILTERS: Filter[] = ["light", "medium", "dark", "all"];
 
 function matchesFilter(p: WheelPoint, filter: Filter) {
   if (filter === "all") return true;
@@ -38,9 +34,11 @@ function matchesFilter(p: WheelPoint, filter: Filter) {
 export default function ColorWheel({
   selected,
   onSelect,
+  labels,
 }: {
   selected: GlazeColor | null;
   onSelect: (c: GlazeColor) => void;
+  labels: Record<Filter, string>;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
@@ -112,12 +110,6 @@ export default function ColorWheel({
       c.setLineDash([4, 4]);
       c.stroke();
       c.setLineDash([]);
-
-      c.fillStyle = "rgba(31, 29, 26, 0.4)";
-      c.font = "10px sans-serif";
-      c.textAlign = "center";
-      c.fillText("明 (White)", CX, topProjY - 6);
-      c.fillText("暗 (Black)", CX, botProjY + 12);
 
       c.beginPath();
       const steps = 40;
@@ -206,8 +198,8 @@ export default function ColorWheel({
     function updateTooltip(point: WheelPoint | null) {
       if (!tooltip) return;
       if (point) {
-        tooltip.style.left = `${point.projX}px`;
-        tooltip.style.top = `${point.projY - 18}px`;
+        tooltip.style.left = `${(point.projX / SIZE) * 100}%`;
+        tooltip.style.top = `${((point.projY - 18) / SIZE) * 100}%`;
         tooltip.classList.add("active");
         const swatch = tooltip.querySelector<HTMLElement>(".tooltip-swatch");
         if (swatch) swatch.style.backgroundColor = point.color.hex;
@@ -238,6 +230,16 @@ export default function ColorWheel({
       return closest;
     }
 
+    // 表示サイズは CSS で伸縮するため、ポインタ座標を描画座標 (SIZE 基準) に換算する
+    const toLocal = (e: MouseEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      const k = SIZE / rect.width;
+      return {
+        mx: (e.clientX - rect.left) * k,
+        my: (e.clientY - rect.top) * k,
+      };
+    };
+
     const onMouseDown = (e: MouseEvent) => {
       dragRef.current = {
         dragging: true,
@@ -250,12 +252,9 @@ export default function ColorWheel({
     const onMouseMove = (e: MouseEvent) => {
       const drag = dragRef.current;
       if (!drag.dragging) {
-        const rect = canvas.getBoundingClientRect();
-        const mx = e.clientX - rect.left;
-        const my = e.clientY - rect.top;
+        const { mx, my } = toLocal(e);
         const prevHovered = hoveredRef.current;
         hoveredRef.current = getClosestPoint(mx, my, 10);
-        canvas.style.cursor = hoveredRef.current ? "pointer" : "grab";
         if (hoveredRef.current !== prevHovered) {
           drawWheel();
           updateTooltip(hoveredRef.current);
@@ -291,9 +290,7 @@ export default function ColorWheel({
 
     const onClick = (e: MouseEvent) => {
       if (dragRef.current.totalDist > 5) return;
-      const rect = canvas.getBoundingClientRect();
-      const mx = e.clientX - rect.left;
-      const my = e.clientY - rect.top;
+      const { mx, my } = toLocal(e);
       const target = getClosestPoint(mx, my, 12);
       if (target) onSelect(target.color);
     };
@@ -316,75 +313,28 @@ export default function ColorWheel({
   }, [points, filter, selected, onSelect]);
 
   return (
-    <>
-      <div className="wheel-controls">
-        <div className="filter-chips">
-          {FILTERS.map((f) => (
-            <span
-              key={f.key}
-              className={`filter-chip ${filter === f.key ? "active" : ""}`}
-              onClick={() => setFilter(f.key)}
-            >
-              {f.label}
-            </span>
-          ))}
-        </div>
+    <div className="color-wheel-wrapper">
+      <canvas
+        ref={canvasRef}
+        width={SIZE}
+        height={SIZE}
+        className="color-wheel"
+      />
+      {FILTERS.map((f) => (
+        <button
+          key={f}
+          type="button"
+          className={`wheel-filter is-${f} ${filter === f ? "active" : ""}`}
+          onClick={() => setFilter(f)}
+        >
+          {labels[f]}
+        </button>
+      ))}
+      <div className="color-tooltip" ref={tooltipRef}>
+        <div className="tooltip-swatch" />
+        <div className="tooltip-id">-</div>
+        <div className="tooltip-hex">-</div>
       </div>
-
-      <div className="color-wheel-container">
-        <div className="color-wheel-wrapper">
-          <canvas
-            ref={canvasRef}
-            width={SIZE}
-            height={SIZE}
-            className="color-wheel"
-          />
-          <div className="color-tooltip" ref={tooltipRef}>
-            <div className="tooltip-swatch" />
-            <div className="tooltip-id">-</div>
-            <div className="tooltip-hex">-</div>
-          </div>
-        </div>
-
-        <div className="selected-preview">
-          {selected ? (
-            <>
-              <div
-                className="selected-preview-swatch"
-                style={{ backgroundColor: selected.hex }}
-                role="img"
-                aria-label={`釉薬カラー ${selected.hex}`}
-              />
-              <div className="selected-preview-info">
-                <div className="selected-preview-title">選択中のテストピース</div>
-                <div className="selected-preview-id">{selected.id}</div>
-                <div className="selected-preview-meta">
-                  <span>
-                    カラー:{" "}
-                    <span
-                      className="selected-preview-hex"
-                      style={{
-                        backgroundColor: selected.hex,
-                        color: selected.hsl.l > 60 ? "#1f1d1a" : "#ffffff",
-                      }}
-                    >
-                      {selected.hex.toLowerCase()}
-                    </span>
-                  </span>
-                  <span className="selected-preview-hsl">
-                    HSL: {selected.hsl.h}°, {selected.hsl.s}%, {selected.hsl.l}%
-                  </span>
-                </div>
-              </div>
-            </>
-          ) : (
-            <div className="selected-preview-info">
-              <div className="selected-preview-title">選択中のテストピース</div>
-              <div className="selected-preview-id">-</div>
-            </div>
-          )}
-        </div>
-      </div>
-    </>
+    </div>
   );
 }

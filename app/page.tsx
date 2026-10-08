@@ -1,126 +1,155 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import ColorWheel from "@/components/ColorWheel";
 import FiringPanel from "@/components/FiringPanel";
 import HslSliderPicker from "@/components/HslSliderPicker";
 import ProfileSketcher from "@/components/ProfileSketcher";
 import VesselCanvas from "@/components/VesselCanvas";
-import { CLAY_BODIES, clayByKey, type ClayKey } from "@/lib/clay";
+import { clayByKey, type ClayKey } from "@/lib/clay";
 import { findClosestColor, type GlazeColor } from "@/lib/colors";
 import {
-  CONCRETE_SHAPES,
-  SHAPE_OPTIONS,
-  type CustomVessel,
-  type ShapeKey,
-  type VesselShape,
-} from "@/lib/vessels";
-
-const STEPS = [
-  { n: 1, ttl: "形と焼き方を選ぶ" },
-  { n: 2, ttl: "つくり方を選ぶ" },
-  { n: 3, ttl: "焼成" },
-  { n: 4, ttl: "調整", small: "Step 4 (option)" },
-];
+  choiceLabel,
+  EXPRESSIONS,
+  STRINGS,
+  STYLE_COLORS,
+  STYLE_NAMES,
+  STYLE_TEXTURES,
+  type Choice,
+  type Lang,
+} from "@/lib/i18n";
+import type { CustomVessel, ShapeKey, VesselShape } from "@/lib/vessels";
 
 // 素地プレビュー（素焼き）の質感。釉薬なしなのでマットに固定
 const CLAY_GLOSS = 6;
 const CLAY_TONE = 50;
 
-function ShapeIcon({ shape }: { shape: ShapeKey | "random" }) {
-  switch (shape) {
-    case "vase":
-      return (
-        <svg viewBox="0 0 60 70">
-          <ellipse cx="30" cy="46" rx="22" ry="22" fill="#1f1d1a" />
-          <rect x="24" y="10" width="12" height="20" fill="#1f1d1a" />
-          <ellipse cx="30" cy="10" rx="9" ry="3" fill="#1f1d1a" />
-        </svg>
-      );
-    case "mug":
-      return (
-        <svg viewBox="0 0 60 70">
-          <rect x="14" y="20" width="28" height="36" rx="2" fill="#1f1d1a" />
-          <path d="M42 28 Q54 32 42 48" stroke="#1f1d1a" strokeWidth="4" fill="none" />
-        </svg>
-      );
-    case "plate":
-      return (
-        <svg viewBox="0 0 60 70">
-          <path d="M10 30 Q30 50 50 30 L46 56 L14 56 Z" fill="#1f1d1a" />
-          <rect x="22" y="56" width="16" height="6" fill="#1f1d1a" />
-        </svg>
-      );
-    case "teapot":
-      return (
-        <svg viewBox="0 0 60 70">
-          <ellipse cx="30" cy="42" rx="18" ry="14" fill="#1f1d1a" />
-          <path d="M14 42 Q4 36 8 28" stroke="#1f1d1a" strokeWidth="4" fill="none" />
-          <rect x="20" y="22" width="20" height="10" rx="2" fill="#1f1d1a" />
-        </svg>
-      );
-    case "yunomi":
-      return (
-        <svg viewBox="0 0 60 70">
-          <path d="M14 30 L46 30 L42 58 L18 58 Z" fill="#1f1d1a" />
-        </svg>
-      );
-    case "bowl":
-      return (
-        <svg viewBox="0 0 60 70">
-          <ellipse cx="30" cy="44" rx="24" ry="10" fill="#1f1d1a" />
-          <path d="M6 44 Q30 30 54 44" stroke="#1f1d1a" strokeWidth="2" fill="none" />
-        </svg>
-      );
-    case "random":
-      return (
-        <svg viewBox="0 0 60 70">
-          <text x="30" y="50" textAnchor="middle" fontSize="40" fill="#1f1d1a">
-            ?
-          </text>
-        </svg>
-      );
-  }
+// 焼成前のプレビューは器を小さめに置き、焼き上がりで大きく見せる
+const PREVIEW_ZOOM = 0.76;
+const ROTATE_SPEED = 1.6;
+
+type CellKey =
+  | "vase"
+  | "haniwa"
+  | "plate"
+  | "handbag"
+  | "teapot"
+  | "flower"
+  | "mug"
+  | "cat"
+  | "surprise";
+
+// 形の 9 マス。shape の無いマスは 3D モデル未対応のため選択できない。
+// surprise は一筆描き (Wheel) の入口
+const FORM_CELLS: { key: CellKey; shape?: ShapeKey }[] = [
+  { key: "vase", shape: "vase" },
+  { key: "haniwa" },
+  { key: "plate", shape: "plate" },
+  { key: "handbag" },
+  { key: "teapot", shape: "teapot" },
+  { key: "flower" },
+  { key: "mug", shape: "mug" },
+  { key: "cat" },
+  { key: "surprise" },
+];
+
+// 素地ごとのサムネイル (public/shapes/<dir>/<cell>.jpg)
+const CLAY_ORDER: { key: ClayKey; dir: string }[] = [
+  { key: "stoneware-white", dir: "white" },
+  { key: "stoneware-red", dir: "red" },
+  { key: "porcelain", dir: "porcelain" },
+];
+
+type Mode = "visual" | "style" | "mood";
+type ColorMode = "wheel" | "slider";
+type View = "title" | "main";
+type FormView = "grid" | "draw" | "preview";
+type GlazeView = "main" | "surface";
+
+// ロゴはデザインのピクセル字形をそのままトレースしたもの（フォントに依存させない）
+const LOGO_ROWS = [
+  ".###..#....##...###..###",
+  "#.....#...#..#...#.....#",
+  "#.....#...#..#...#....#.",
+  "#.##..#...####...#....#.",
+  "#..#..#...#..#...#...#..",
+  ".###..###.#..#..###..###",
+];
+const LOGO_PATH = LOGO_ROWS.flatMap((row, y) =>
+  [...row].map((ch, x) => (ch === "#" ? `M${x} ${y}h1v1h-1z` : ""))
+).join("");
+
+function Logo() {
+  return (
+    <svg
+      className="logo-mark"
+      viewBox={`0 0 ${LOGO_ROWS[0].length} ${LOGO_ROWS.length}`}
+      role="img"
+      aria-label="GLAIZ"
+    >
+      <path d={LOGO_PATH} />
+    </svg>
+  );
 }
 
-function ChipGroup({
+function Arrow({ dir }: { dir: "left" | "right" }) {
+  return (
+    <svg className={`arrow is-${dir}`} viewBox="0 0 10 10" aria-hidden="true">
+      <path d="M0 4h6v2H0zM4 0h2v2H4zM6 2h2v2H6zM8 4h2v2H8zM6 6h2v2H6zM4 8h2v2H4z" />
+    </svg>
+  );
+}
+
+function RotateIcon({ dir }: { dir: "left" | "right" }) {
+  return (
+    <svg className={`rotate-icon is-${dir}`} viewBox="0 0 40 30" aria-hidden="true">
+      <path d="M33 9C21 5 4 8 4 16c0 7 17 10 32 6" />
+      <path d="M25 3l9 6-10 4" />
+    </svg>
+  );
+}
+
+function ChoiceList({
   items,
   selected,
   onSelect,
-  className = "chips",
+  lang,
+  className = "items",
 }: {
-  items: string[];
+  items: Choice[];
   selected: string;
   onSelect: (v: string) => void;
+  lang: Lang;
   className?: string;
 }) {
   return (
     <div className={className}>
-      {items.map((item) => (
-        <div
-          key={item}
-          className={`chip ${selected === item ? "selected" : ""}`}
-          onClick={() => onSelect(item)}
+      {items.map((c) => (
+        <button
+          key={c.value}
+          type="button"
+          className={`item ${selected === c.value ? "active" : ""}`}
+          onClick={() => onSelect(c.value)}
         >
-          {item}
-        </div>
+          -{choiceLabel(c, lang)}
+        </button>
       ))}
     </div>
   );
 }
 
-type Mode = "visual" | "style" | "mood";
-type ShapeMode = "preset" | "draw";
-type ColorMode = "wheel" | "slider";
-
 export default function Home() {
+  const [lang, setLang] = useState<Lang>("en");
+  const t = STRINGS[lang];
+  const [view, setView] = useState<View>("title");
+  const [about, setAbout] = useState(false);
+
   const [step, setStep] = useState(1);
+  const [formView, setFormView] = useState<FormView>("grid");
+  const [glazeView, setGlazeView] = useState<GlazeView>("main");
+
   const [shape, setShape] = useState<VesselShape>("vase");
-  const [shapeLabel, setShapeLabel] = useState("花瓶");
-  const [selectedShapeOption, setSelectedShapeOption] = useState<
-    ShapeKey | "random" | null
-  >("vase");
-  const [shapeMode, setShapeMode] = useState<ShapeMode>("preset");
+  const [selectedCell, setSelectedCell] = useState<CellKey>("vase");
   const [customVessel, setCustomVessel] = useState<CustomVessel | null>(null);
   const [glaze, setGlaze] = useState<GlazeColor | null>(() =>
     findClosestColor("#2f6d5f")
@@ -142,6 +171,8 @@ export default function Home() {
 
   const [clayKey, setClayKey] = useState<ClayKey>("stoneware-white");
   const clay = clayByKey(clayKey);
+  const clayDir =
+    CLAY_ORDER.find((c) => c.key === clayKey)?.dir ?? CLAY_ORDER[0].dir;
   const [atmosphere, setAtmosphere] = useState("還元焼成");
 
   const [tone, setTone] = useState(60);
@@ -151,39 +182,43 @@ export default function Home() {
   const [temp, setTemp] = useState(1230);
   const [thickness, setThickness] = useState(55);
 
-  // 焼成: 「焼成する」を押すたびに fireKey を進めて Step 3 で生成を走らせる
+  // 焼成: FIRE を押すたびに fireKey を進めて Step 3 で生成を走らせる
   const [fireKey, setFireKey] = useState(0);
   const [firedTexture, setFiredTexture] = useState<string | null>(null);
   const [firing, setFiring] = useState(false);
+  const [rotateDir, setRotateDir] = useState(1);
 
-  const goTo = (n: number) => {
-    setStep(n);
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
+  useEffect(() => {
+    document.documentElement.lang = lang;
+  }, [lang]);
 
-  const pickShape = (key: ShapeKey | "random", name: string) => {
-    setSelectedShapeOption(key);
-    setShapeLabel(name);
-    if (key === "random") {
-      setShape(
-        CONCRETE_SHAPES[Math.floor(Math.random() * CONCRETE_SHAPES.length)]
-      );
-    } else {
-      setShape(key);
+  const pickCell = (cell: (typeof FORM_CELLS)[number]) => {
+    if (cell.key === "surprise") {
+      setFormView("draw");
+      return;
     }
+    if (!cell.shape) return;
+    setSelectedCell(cell.key);
+    setShape(cell.shape);
   };
 
   const pickCustomShape = (v: CustomVessel) => {
     setCustomVessel(v);
     setShape("custom");
-    setShapeLabel("自由形状（一筆描き）");
-    setSelectedShapeOption(null);
+    setSelectedCell("surprise");
+    setFormView("preview");
   };
 
   const startFiring = () => {
     setFiredTexture(null);
+    setFiring(true);
     setFireKey((k) => k + 1);
-    goTo(3);
+    setStep(3);
+  };
+
+  const backToGlaze = () => {
+    setGlazeView("main");
+    setStep(2);
   };
 
   // Step 1 では釉薬をかける前の素地を表示し、Step 2 では選択中の釉薬の単色（DB 上の色）を
@@ -206,371 +241,496 @@ export default function Home() {
         gloss,
         tone,
       };
-  const previewTitle = showingClay
-    ? "素地プレビュー"
-    : step >= 3 && firedTexture
-      ? "焼き上がりプレビュー"
-      : "施釉プレビュー";
+
+  const inFlow = view === "main" && !about;
+  const firingNow = step === 3 && firing;
+  const showResult = step === 3 && !firing;
+  // 器の 3D プレビューを出す画面。形の一覧・一筆描き中は出さない
+  const showViewer = inFlow && (step >= 2 || formView === "preview");
+
+  const adjustRows = [
+    { key: "tone", value: tone, set: setTone, min: 0, max: 100, unit: "" },
+    { key: "gloss", value: gloss, set: setGloss, min: 0, max: 100, unit: "" },
+    { key: "flow", value: flow, set: setFlow, min: 0, max: 100, unit: "" },
+    { key: "crackle", value: crackle, set: setCrackle, min: 0, max: 100, unit: "" },
+    { key: "temp", value: temp, set: setTemp, min: 1100, max: 1300, unit: "℃" },
+    { key: "thickness", value: thickness, set: setThickness, min: 0, max: 100, unit: "" },
+  ] as const;
+
+  const backdropState =
+    view === "title" ? "is-title" : inFlow && firingNow ? "is-firing" : "";
 
   return (
-    <div className="app">
-      <div className="header">
-        <div className="brand">
-          <span className="dot" />
-          Glazescape Project
-        </div>
+    <>
+      <div className={`backdrop ${backdropState}`} aria-hidden="true">
+        <div className="backdrop-title" />
+        <div className="backdrop-firing" />
+        <div className="backdrop-grid" />
+        <div className="backdrop-grain" />
       </div>
 
-      {/* Stepper (インジケーター。移動は画面下の Prev / Next で行う) */}
-      <div className="stepper">
-        {STEPS.map((s) => (
-          <div
-            key={s.n}
-            className={`step ${step === s.n ? "active" : ""} ${step > s.n ? "done" : ""}`}
+      <div className={`stage ${inFlow && firingNow ? "is-firing" : ""}`}>
+        {/* 共通クローム: ロゴと右ナビ。焼成演出中は隠す */}
+        {!(inFlow && firingNow) && (
+          <button
+            type="button"
+            className="logo"
+            onClick={() => {
+              setAbout(false);
+              setView("title");
+            }}
           >
-            <div className="num">{s.n}</div>
-            <div className="label">
-              <span className="small">{s.small ?? `Step ${s.n}`}</span>
-              <span className="ttl">{s.ttl}</span>
+            <Logo />
+          </button>
+        )}
+
+        {view === "main" && !firingNow && (
+          <nav className="rnav">
+            <button
+              type="button"
+              className={`rnav-item is-about ${about ? "active" : ""}`}
+              onClick={() => setAbout((a) => !a)}
+            >
+              {t.about}
+            </button>
+            <div className="rnav-item is-lang">
+              <button
+                type="button"
+                className={lang === "en" ? "active" : ""}
+                onClick={() => setLang("en")}
+              >
+                EN
+              </button>
+              <span> / </span>
+              <button
+                type="button"
+                className={lang === "ja" ? "active" : ""}
+                onClick={() => setLang("ja")}
+              >
+                JP
+              </button>
             </div>
+            {/* ARCHIVE / SHARE は未実装のため非活性 */}
+            <span className="rnav-item is-archive is-disabled" aria-disabled="true">
+              {t.archive}
+            </span>
+            <span className="rnav-item is-share is-disabled" aria-disabled="true">
+              {t.share}
+            </span>
+          </nav>
+        )}
+
+        {view === "title" && (
+          <button
+            type="button"
+            className="title-screen"
+            aria-label={t.start}
+            onClick={() => setView("main")}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img className="title-vessel" src="/title-vessel.webp" alt="" />
+          </button>
+        )}
+
+        {view === "main" && about && (
+          <div className="about">
+            <h1>
+              {t.aboutHeading.map((line) => (
+                <span key={line}>{line}</span>
+              ))}
+            </h1>
+            {t.aboutBody.map((p) => (
+              <p key={p}>{p}</p>
+            ))}
           </div>
-        ))}
-      </div>
+        )}
 
-      <div className="app-layout">
-        <div className="app-main">
-          {/* Step 1: 形 */}
-          <div className={`panel ${step === 1 ? "active" : ""}`}>
-            <h2>形と焼き方を選ぶ</h2>
-            <p className="sub">
-              器の形と素地、焼成雰囲気を選びます。プレビューは釉薬をかける前の素地の状態です。
-            </p>
-
-            <div className="filter-chips picker-tabs">
-              <span
-                className={`filter-chip ${shapeMode === "preset" ? "active" : ""}`}
-                onClick={() => setShapeMode("preset")}
-              >
-                プリセットから選ぶ
-              </span>
-              <span
-                className={`filter-chip ${shapeMode === "draw" ? "active" : ""}`}
-                onClick={() => setShapeMode("draw")}
-              >
-                一筆描きでつくる
-              </span>
-            </div>
-
-            {shapeMode === "preset" ? (
-              <div className="shapes">
-                {SHAPE_OPTIONS.map((opt) => (
-                  <div
-                    key={opt.key}
-                    className={`shape-card ${selectedShapeOption === opt.key ? "selected" : ""}`}
-                    onClick={() => pickShape(opt.key, opt.name)}
+        {/* 制作フロー。ABOUT / タイトル表示中も状態を保つため、隠すだけでアンマウントしない */}
+        <div className="flow" hidden={!inFlow}>
+          {/* Step 1: 形・素地・焼成雰囲気 */}
+          {step === 1 && (
+            <>
+              <div className="col">
+                <div className="group">
+                  <button
+                    type="button"
+                    className="h"
+                    onClick={() => setFormView("grid")}
                   >
-                    <ShapeIcon shape={opt.key} />
-                    <div className="shape-name">{opt.name}</div>
+                    +{t.form}
+                  </button>
+                </div>
+                <div className="group">
+                  <div className="h">+{t.clayBody}</div>
+                  <div className="items">
+                    {CLAY_ORDER.map((c) => (
+                      <button
+                        key={c.key}
+                        type="button"
+                        className={`item ${clayKey === c.key ? "active" : ""}`}
+                        onClick={() => setClayKey(c.key)}
+                      >
+                        -{t.clays[c.key]}
+                      </button>
+                    ))}
                   </div>
-                ))}
-              </div>
-            ) : (
-              <ProfileSketcher onShapeDrawn={pickCustomShape} />
-            )}
-
-            <div className="field firing-fields">
-              <div className="field-label">素地</div>
-              <div className="option-grid clay-grid">
-                {CLAY_BODIES.map((c) => (
-                  <div
-                    key={c.key}
-                    className={`option-card clay-card ${clayKey === c.key ? "selected" : ""}`}
-                    onClick={() => setClayKey(c.key)}
-                  >
-                    <span
-                      className="clay-swatch"
-                      style={{ backgroundColor: c.hex }}
-                    />
-                    <div>
-                      <div className="ttl">{c.name}</div>
-                      <div className="desc">{c.desc}</div>
-                    </div>
+                </div>
+                <div className="group">
+                  <div className="h">+{t.atmosphere}</div>
+                  <div className="items">
+                    <button
+                      type="button"
+                      className={`item ${atmosphere === "酸化焼成" ? "active" : ""}`}
+                      onClick={() => setAtmosphere("酸化焼成")}
+                    >
+                      -{t.oxidation}
+                    </button>
+                    <button
+                      type="button"
+                      className={`item ${atmosphere === "還元焼成" ? "active" : ""}`}
+                      onClick={() => setAtmosphere("還元焼成")}
+                    >
+                      -{t.reduction}
+                    </button>
                   </div>
-                ))}
+                </div>
               </div>
-            </div>
 
-            <div className="field">
-              <div className="field-label">焼成雰囲気</div>
-              <div className="option-grid">
-                <div
-                  className={`option-card ${atmosphere === "酸化焼成" ? "selected" : ""}`}
-                  onClick={() => setAtmosphere("酸化焼成")}
+              {formView === "grid" && (
+                <div className="panel shape-grid">
+                  {FORM_CELLS.map((cell) => {
+                    const selectable = cell.key === "surprise" || !!cell.shape;
+                    const selected = selectedCell === cell.key;
+                    const label =
+                      cell.key === "surprise" && selected
+                        ? t.shapes.wheel
+                        : t.shapes[cell.key];
+                    return (
+                      <button
+                        key={cell.key}
+                        type="button"
+                        className={`shape-cell ${selected ? "selected" : ""}`}
+                        disabled={!selectable}
+                        onClick={() => pickCell(cell)}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={`/shapes/${clayDir}/${cell.key}.jpg`} alt="" />
+                        <span className="shape-label">{label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {formView === "draw" && (
+                <div className="panel finegrid">
+                  <ProfileSketcher
+                    onShapeDrawn={pickCustomShape}
+                    hint={t.drawHint}
+                    tooShortText={t.drawTooShort}
+                  />
+                </div>
+              )}
+
+              <div className="nav">
+                <button
+                  type="button"
+                  className="link"
+                  disabled={formView === "draw"}
+                  onClick={() => setStep(2)}
                 >
-                  <div className="ttl">酸化焼成</div>
-                  <div className="desc">明るく安定した発色。再現性が高い。</div>
-                </div>
-                <div
-                  className={`option-card ${atmosphere === "還元焼成" ? "selected" : ""}`}
-                  onClick={() => setAtmosphere("還元焼成")}
-                >
-                  <div className="ttl">還元焼成</div>
-                  <div className="desc">深み・変化・渋みが出やすい。</div>
-                </div>
+                  {t.next} <Arrow dir="right" />
+                </button>
               </div>
-            </div>
-          </div>
+            </>
+          )}
 
-          {/* Step 2: つくり方 */}
-          <div className={`panel ${step === 2 ? "active" : ""}`}>
-            <h2>つくり方を選ぶ</h2>
-            <p className="sub">3つのアプローチから、あなたに合う方法を選んでください。</p>
-
-            <div className="modes">
-              <div
-                className={`mode-card ${mode === "visual" ? "active" : ""}`}
-                onClick={() => setMode("visual")}
-              >
-                <div className="mode-ttl">見た目からつくる</div>
-                <div className="mode-desc">
-                  色・質感・透明度などビジュアルで指定（わかりやすさ）
-                </div>
-              </div>
-              <div
-                className={`mode-card ${mode === "style" ? "active" : ""}`}
-                onClick={() => setMode("style")}
-              >
-                <div className="mode-ttl">釉薬スタイルからつくる</div>
-                <div className="mode-desc">
-                  伝統名称や仕上がり質感から選ぶ（専門性）
-                </div>
-              </div>
-              <div
-                className={`mode-card ${mode === "mood" ? "active" : ""}`}
-                onClick={() => setMode("mood")}
-              >
-                <div className="mode-ttl">気分からつくる</div>
-                <div className="mode-desc">
-                  言葉で気分を伝えるとAIが解釈（AIらしさ）
-                </div>
-              </div>
-            </div>
-
-            {/* Mode A: Visual */}
-            <div className={`mode-body ${mode === "visual" ? "active" : ""}`}>
-              <div className="field">
-                <div className="field-label">
-                  <span className="num-badge">1</span>色を選ぶ
-                  <span className="field-hint">
-                    （テストピース画像から抽出した1283色）
-                  </span>
-                </div>
-                <div className="filter-chips picker-tabs">
-                  <span
-                    className={`filter-chip ${colorMode === "wheel" ? "active" : ""}`}
-                    onClick={() => setColorMode("wheel")}
+          {/* Step 2: 釉薬のつくり方。左カラムの見出しで 3 方式を切り替える */}
+          {step === 2 && glazeView === "main" && (
+            <>
+              <div className="col is-accordion">
+                <div className="group">
+                  <button
+                    type="button"
+                    className="h"
+                    onClick={() => setMode("visual")}
                   >
-                    色相環から選ぶ
-                  </span>
-                  <span
-                    className={`filter-chip ${colorMode === "slider" ? "active" : ""}`}
-                    onClick={() => setColorMode("slider")}
-                  >
-                    HSLスライダーで選ぶ
-                  </span>
-                </div>
-                {colorMode === "wheel" ? (
-                  <ColorWheel selected={glaze} onSelect={setGlaze} />
-                ) : (
-                  <HslSliderPicker
-                    selected={glaze}
-                    onSelect={setGlaze}
-                    onPreviewColor={setLivePreviewHex}
-                  />
-                )}
-              </div>
-
-              <div className="field">
-                <div className="field-label">
-                  <span className="num-badge">2</span>表情を選ぶ
-                </div>
-                <ChipGroup
-                  items={["なめらか", "ざらつき", "流れ", "斑点", "貫入", "結晶"]}
-                  selected={expression}
-                  onSelect={setExpression}
-                />
-              </div>
-
-              <div className="field">
-                <div className="field-label">
-                  <span className="num-badge">3</span>透明度
-                  <span className="field-hint">透明 ← → 乳濁</span>
-                </div>
-                <div className="slider-row">
-                  <input
-                    type="range"
-                    min={0}
-                    max={100}
-                    value={transparency}
-                    onChange={(e) => setTransparency(Number(e.target.value))}
-                  />
-                  <div className="slider-val">{transparency} / 100</div>
-                </div>
-              </div>
-
-              <div className="field">
-                <div className="field-label">
-                  <span className="num-badge">4</span>光沢度
-                  <span className="field-hint">マット ← → 光沢</span>
-                </div>
-                <div className="slider-row">
-                  <input
-                    type="range"
-                    min={0}
-                    max={100}
-                    value={glossiness}
-                    onChange={(e) => setGlossiness(Number(e.target.value))}
-                  />
-                  <div className="slider-val">{glossiness} / 100</div>
-                </div>
-              </div>
-            </div>
-
-            {/* Mode B: Style */}
-            <div className={`mode-body ${mode === "style" ? "active" : ""}`}>
-              <div className="field">
-                <div className="field-label">
-                  <span className="num-badge">1</span>伝統名称
-                </div>
-                <ChipGroup
-                  items={[
-                    "志野釉", "織部釉", "天目釉", "青磁釉", "黄瀬戸釉", "瀬戸黒釉",
-                    "辰砂釉", "白萩釉", "海鼠釉", "鈞窯釉", "月白釉", "伊羅保釉",
-                  ]}
-                  selected={styleName}
-                  onSelect={setStyleName}
-                />
-              </div>
-
-              <div className="field">
-                <div className="field-label">
-                  <span className="num-badge">2</span>色や発色
-                </div>
-                <ChipGroup
-                  items={[
-                    "瑠璃釉", "トルコ青釉", "銅赤釉", "銅青磁釉", "鉄釉",
-                    "柿釉", "黒釉", "鉄赤釉", "緑釉",
-                  ]}
-                  selected={styleColor}
-                  onSelect={setStyleColor}
-                />
-              </div>
-
-              <div className="field">
-                <div className="field-label">
-                  <span className="num-badge">3</span>仕上がりの質感
-                </div>
-                <ChipGroup
-                  items={["透明釉", "乳濁釉", "マット釉", "貫入釉", "結晶釉", "ラスター釉"]}
-                  selected={styleTexture}
-                  onSelect={setStyleTexture}
-                />
-              </div>
-            </div>
-
-            {/* Mode C: Mood */}
-            <div className={`mode-body ${mode === "mood" ? "active" : ""}`}>
-              <div className="field">
-                <div className="field-label">今日の気分を言葉で</div>
-                <textarea
-                  className="mood-input"
-                  placeholder="例：雨上がりの森みたいな、静かで少し湿った感じ…"
-                  value={mood}
-                  onChange={(e) => setMood(e.target.value)}
-                />
-                <div className="mood-suggest">
-                  {["夕暮れの海", "古い石畳", "朝もやの山", "焚き火のそば", "月明かり"].map(
-                    (m) => (
-                      <div key={m} className="chip" onClick={() => setMood(m)}>
-                        {m}
+                    +{t.color}
+                  </button>
+                  {mode === "visual" && (
+                    <>
+                      <div className="subtabs">
+                        <button
+                          type="button"
+                          className={colorMode === "wheel" ? "active" : ""}
+                          onClick={() => setColorMode("wheel")}
+                        >
+                          -{t.colorWheel}
+                        </button>
+                        <span> / </span>
+                        <button
+                          type="button"
+                          className={colorMode === "slider" ? "active" : ""}
+                          onClick={() => setColorMode("slider")}
+                        >
+                          {t.hslSliders}
+                        </button>
                       </div>
-                    )
+                      {colorMode === "wheel" ? (
+                        <ColorWheel
+                          selected={glaze}
+                          onSelect={setGlaze}
+                          labels={t.wheelFilters}
+                        />
+                      ) : (
+                        <HslSliderPicker
+                          selected={glaze}
+                          onSelect={setGlaze}
+                          onPreviewColor={setLivePreviewHex}
+                          labels={t}
+                        />
+                      )}
+                    </>
+                  )}
+                </div>
+
+                <div className="group">
+                  <button
+                    type="button"
+                    className="h"
+                    onClick={() => setMode("style")}
+                  >
+                    +{t.glazeStyle}
+                  </button>
+                  {mode === "style" && (
+                    <div className="style-groups">
+                      <div className="style-label">{t.styleName}</div>
+                      <ChoiceList
+                        className="items is-inline"
+                        items={STYLE_NAMES}
+                        selected={styleName}
+                        onSelect={setStyleName}
+                        lang={lang}
+                      />
+                      <div className="style-label">{t.styleColor}</div>
+                      <ChoiceList
+                        className="items is-inline"
+                        items={STYLE_COLORS}
+                        selected={styleColor}
+                        onSelect={setStyleColor}
+                        lang={lang}
+                      />
+                      <div className="style-label">{t.styleTexture}</div>
+                      <ChoiceList
+                        className="items is-inline"
+                        items={STYLE_TEXTURES}
+                        selected={styleTexture}
+                        onSelect={setStyleTexture}
+                        lang={lang}
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div className="group">
+                  <button
+                    type="button"
+                    className="h"
+                    onClick={() => setMode("mood")}
+                  >
+                    +{t.withWords}
+                  </button>
+                  {mode === "mood" && (
+                    <textarea
+                      className="words"
+                      placeholder={t.moodPlaceholder}
+                      value={mood}
+                      onChange={(e) => setMood(e.target.value)}
+                    />
                   )}
                 </div>
               </div>
-            </div>
-          </div>
 
-          {/* Step 3: 焼成 */}
-          <div className={`panel ${step === 3 ? "active" : ""}`}>
-            <FiringPanel
-              active={step === 3}
-              fireKey={fireKey}
-              shape={shape}
-              custom={customVessel}
-              gloss={gloss}
-              tone={tone}
-              ui={{
-                mode,
-                glaze,
-                expression,
-                transparency,
-                glossiness,
-                styleName,
-                styleColor,
-                styleTexture,
-                mood,
-                clay: clay.name,
-                atmosphere,
-                temp,
-              }}
-              thickness={thickness}
-              onTexture={setFiredTexture}
-              onGeneratingChange={setFiring}
-            />
-          </div>
+              <div className="nav">
+                <button type="button" className="link" onClick={() => setStep(1)}>
+                  <Arrow dir="left" /> {t.back}
+                </button>
+                <span className="sep">/</span>
+                {mode === "visual" ? (
+                  <button
+                    type="button"
+                    className="link"
+                    onClick={() => setGlazeView("surface")}
+                  >
+                    {t.next} <Arrow dir="right" />
+                  </button>
+                ) : (
+                  <button type="button" className="link" onClick={startFiring}>
+                    {t.fire} <Arrow dir="right" />
+                  </button>
+                )}
+              </div>
+            </>
+          )}
 
-          {/* Step 4: 調整 */}
-          <div className={`panel ${step === 4 ? "active" : ""}`}>
-            <h2>調整</h2>
-            <p className="sub">焼成結果をベースに、パラメータを微調整できます。</p>
-
-            <div className="adjust-grid">
-              {(
-                [
-                  { label: "色の濃さ", value: tone, set: setTone, min: 0, max: 100 },
-                  { label: "光沢", value: gloss, set: setGloss, min: 0, max: 100 },
-                  { label: "流れの強さ", value: flow, set: setFlow, min: 0, max: 100 },
-                  { label: "貫入の細かさ", value: crackle, set: setCrackle, min: 0, max: 100 },
-                  { label: "焼成温度", value: temp, set: setTemp, min: 1100, max: 1300, unit: "℃" },
-                  { label: "施釉の厚み", value: thickness, set: setThickness, min: 0, max: 100 },
-                ] as const
-              ).map((row) => (
-                <div className="adjust-row" key={row.label}>
-                  <div className="adjust-label">{row.label}</div>
+          {/* Step 2 (見た目からつくる) の 2 画面目: 表情・透明度・光沢 */}
+          {step === 2 && glazeView === "surface" && (
+            <>
+              <div className="col">
+                <div className="group">
+                  <div className="h">+{t.surfaceEffect}</div>
+                  <ChoiceList
+                    items={EXPRESSIONS}
+                    selected={expression}
+                    onSelect={setExpression}
+                    lang={lang}
+                  />
+                </div>
+                <div className="group">
+                  <div className="h">+{t.transparency}</div>
                   <input
                     type="range"
-                    min={row.min}
-                    max={row.max}
-                    value={row.value}
-                    onChange={(e) => row.set(Number(e.target.value))}
+                    className="slider"
+                    min={0}
+                    max={100}
+                    value={transparency}
+                    aria-label={t.transparency}
+                    onChange={(e) => setTransparency(Number(e.target.value))}
                   />
-                  <div className="slider-val">
-                    {row.value}
-                    {"unit" in row ? row.unit : ""}
+                </div>
+                <div className="group">
+                  <div className="h">+{t.gloss}</div>
+                  <input
+                    type="range"
+                    className="slider"
+                    min={0}
+                    max={100}
+                    value={glossiness}
+                    aria-label={t.gloss}
+                    onChange={(e) => setGlossiness(Number(e.target.value))}
+                  />
+                </div>
+              </div>
+
+              <div className="nav">
+                <button
+                  type="button"
+                  className="link"
+                  onClick={() => setGlazeView("main")}
+                >
+                  <Arrow dir="left" /> {t.back}
+                </button>
+                <span className="sep">/</span>
+                <button type="button" className="link" onClick={startFiring}>
+                  {t.fire} <Arrow dir="right" />
+                </button>
+              </div>
+            </>
+          )}
+
+          {/* Step 3: 焼成。進行中は焼成演出、焼き上がるとレシピを表示する */}
+          <FiringPanel
+            active={step === 3}
+            fireKey={fireKey}
+            ui={{
+              mode,
+              glaze,
+              expression,
+              transparency,
+              glossiness,
+              styleName,
+              styleColor,
+              styleTexture,
+              mood,
+              clay: clay.name,
+              atmosphere,
+              temp,
+            }}
+            thickness={thickness}
+            t={t}
+            onTexture={setFiredTexture}
+            onGeneratingChange={setFiring}
+          />
+
+          {step === 3 && (
+            <div className="nav">
+              <button type="button" className="link" onClick={backToGlaze}>
+                <Arrow dir="left" /> {t.back}
+              </button>
+              {showResult && (
+                <>
+                  <span className="sep">/</span>
+                  <button type="button" className="link" onClick={() => setStep(4)}>
+                    {t.adjust}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+
+          {showResult && (
+            <>
+              <button
+                type="button"
+                className="rotate is-left"
+                aria-label={t.rotateLeft}
+                onClick={() => setRotateDir(-1)}
+              >
+                <RotateIcon dir="left" />
+              </button>
+              <button
+                type="button"
+                className="rotate is-right"
+                aria-label={t.rotateRight}
+                onClick={() => setRotateDir(1)}
+              >
+                <RotateIcon dir="right" />
+              </button>
+            </>
+          )}
+
+          {/* Step 4: 調整 */}
+          {step === 4 && (
+            <>
+              <div className="col">
+                <div className="group">
+                  <div className="h">+{t.adjust}</div>
+                  <div className="adjust-rows">
+                    {adjustRows.map((row) => (
+                      <label className="adjust-row" key={row.key}>
+                        <span className="adjust-label">
+                          <span>-{t.adjustRows[row.key]}</span>
+                          <span>
+                            {row.value}
+                            {row.unit}
+                          </span>
+                        </span>
+                        <input
+                          type="range"
+                          className="slider"
+                          min={row.min}
+                          max={row.max}
+                          value={row.value}
+                          onChange={(e) => row.set(Number(e.target.value))}
+                        />
+                      </label>
+                    ))}
                   </div>
                 </div>
-              ))}
-            </div>
-          </div>
-        </div>
+              </div>
 
-        {/* Persistent Preview Sidebar (焼成ステップでは結果を主役にするため非表示) */}
-        {step !== 3 && (
-        <div className="app-sidebar">
-          <div className="persistent-preview-card">
-            <div className="preview-title">{previewTitle}</div>
-            <div className="preview-visual">
+              <div className="nav">
+                <button type="button" className="link" onClick={() => setStep(3)}>
+                  <Arrow dir="left" /> {t.back}
+                </button>
+              </div>
+            </>
+          )}
+
+          {showViewer && (
+            <div
+              className={`panel viewer ${firingNow ? "is-firing" : "finegrid"}`}
+            >
               <VesselCanvas
                 shape={shape}
                 custom={customVessel}
@@ -579,76 +739,14 @@ export default function Home() {
                 dissolveKey={preview.dissolveKey}
                 gloss={preview.gloss}
                 tone={preview.tone}
+                zoom={step >= 3 ? 1 : PREVIEW_ZOOM}
+                lowPoly={step < 3}
+                autoRotateSpeed={ROTATE_SPEED * rotateDir}
               />
             </div>
-            <div className="preview-meta-info">
-              <div>
-                <span>器の形:</span> <span>{shapeLabel}</span>
-              </div>
-              <div>
-                <span>素地:</span> <span>{clay.name}</span>
-              </div>
-              <div>
-                <span>釉薬ピース:</span>{" "}
-                <span>
-                  {glaze ? `${glaze.id}（${glaze.hex}）` : "未選択"}
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-        )}
-      </div>
-
-      {/* Prev / Next: 1 ステップずつ進む。戻るのは自由 */}
-      <div className="step-nav">
-        <div className="step-nav-inner">
-          <div>
-            {step === 2 && (
-              <button className="btn" onClick={() => goTo(1)}>
-                ← 形と焼き方を選ぶ
-              </button>
-            )}
-            {step === 3 && (
-              <button className="btn" onClick={() => goTo(2)}>
-                ← つくり方を選ぶ
-              </button>
-            )}
-            {step === 4 && (
-              <button className="btn" onClick={() => goTo(3)}>
-                ← 焼成
-              </button>
-            )}
-          </div>
-          <div className="step-nav-right">
-            {step === 1 && (
-              <button className="btn primary" onClick={() => goTo(2)}>
-                つくり方を選ぶ →
-              </button>
-            )}
-            {step === 2 && (
-              <button className="btn fire" onClick={startFiring}>
-                <span className="icon">🔥</span>焼成する
-              </button>
-            )}
-            {step === 3 && (
-              <>
-                {firing && (
-                  <span className="step-nav-hint">焼き上がるまでお待ちください</span>
-                )}
-                <button
-                  className="btn primary"
-                  onClick={() => goTo(4)}
-                  disabled={firing}
-                >
-                  調整する →
-                </button>
-              </>
-            )}
-            {step === 4 && <button className="btn primary">レシピを保存</button>}
-          </div>
+          )}
         </div>
       </div>
-    </div>
+    </>
   );
 }

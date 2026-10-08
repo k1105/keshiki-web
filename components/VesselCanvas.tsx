@@ -21,6 +21,10 @@ type GlazeProps = {
 const FALLBACK_HEX = "#b8aa98";
 const DISSOLVE_DURATION = 1.4; // 秒
 
+// 焼成前のローポリ表示: 回転体の分割数を極端に落とし、フラットシェーディングで面を立たせる
+const LOW_POLY_RADIAL = 7; // 周方向の分割数（通常 64）
+const LOW_POLY_PROFILE = 8; // 断面の分割数（通常 48）
+
 function materialParams(gloss: number, tone: number) {
   const brightness = 0.75 + (tone / 100) * 0.5;
   return {
@@ -240,11 +244,13 @@ type MaterialProps = {
   hex: string | null;
   gloss: number;
   tone: number;
+  /** フラットシェーディング（ローポリ表示用） */
+  flat: boolean;
 };
 
-function GlazeMaterial({ transition, hex, gloss, tone }: MaterialProps) {
+function GlazeMaterial({ transition, hex, gloss, tone, flat }: MaterialProps) {
   const { map, uniforms } = transition;
-  const params = materialParams(gloss, tone);
+  const params = { ...materialParams(gloss, tone), flatShading: flat };
 
   const onBeforeCompile = useMemo(
     () => (shader: THREE.WebGLProgramParametersWithUniforms) => {
@@ -261,12 +267,14 @@ function GlazeMaterial({ transition, hex, gloss, tone }: MaterialProps) {
   if (!map) {
     const base = new THREE.Color(hex ?? FALLBACK_HEX);
     base.multiply(params.color);
-    return <meshPhysicalMaterial key="plain" {...params} color={base} />;
+    return (
+      <meshPhysicalMaterial key={`plain-${flat}`} {...params} color={base} />
+    );
   }
 
   return (
     <meshPhysicalMaterial
-      key="dissolve"
+      key={`dissolve-${flat}`}
       map={map}
       {...params}
       onBeforeCompile={onBeforeCompile}
@@ -279,17 +287,31 @@ function Vessel({
   shape,
   custom,
   glaze,
+  zoom,
+  lowPoly,
 }: {
   shape: VesselShape;
   custom?: CustomVessel | null;
   glaze: GlazeProps;
+  zoom: number;
+  lowPoly: boolean;
 }) {
   const spec = useMemo(() => resolveVesselSpec(shape, custom), [shape, custom]);
 
   const points = useMemo(() => {
     const v = spec.profile.map(([x, y]) => new THREE.Vector2(x, y));
+    if (lowPoly) {
+      // 折れ線プロファイルもスプラインに通して点数を間引く
+      return new THREE.SplineCurve(v).getPoints(LOW_POLY_PROFILE);
+    }
     return spec.smooth ? new THREE.SplineCurve(v).getPoints(48) : v;
-  }, [spec]);
+  }, [spec, lowPoly]);
+
+  const radial = lowPoly ? LOW_POLY_RADIAL : 64;
+  // 付属パーツ（取っ手・高台・蓋など）の分割数
+  const seg = lowPoly
+    ? { tube: 4, ring: 7, cyl: 7, sphW: 7, sphH: 4 }
+    : { tube: 16, ring: 40, cyl: 48, sphW: 32, sphH: 16 };
 
   const transition = useGlazeTransition(
     glaze.texturePath,
@@ -301,32 +323,36 @@ function Vessel({
     hex: glaze.hex,
     gloss: glaze.gloss,
     tone: glaze.tone,
+    flat: lowPoly,
   };
 
   return (
-    <group scale={spec.scale} position={[0, (-spec.height * spec.scale) / 2, 0]}>
+    <group
+      scale={spec.scale * zoom}
+      position={[0, (-spec.height * spec.scale * zoom) / 2, 0]}
+    >
       <mesh>
-        <latheGeometry args={[points, 64]} />
+        <latheGeometry args={[points, radial]} />
         <GlazeMaterial {...mat} />
       </mesh>
 
       {shape === "mug" && (
         <mesh position={[0.78, 0.78, 0]}>
-          <torusGeometry args={[0.34, 0.075, 16, 40]} />
+          <torusGeometry args={[0.34, 0.075, seg.tube, seg.ring]} />
           <GlazeMaterial {...mat} />
         </mesh>
       )}
 
       {shape === "plate" && (
         <mesh position={[0, 0.14, 0]}>
-          <cylinderGeometry args={[0.5, 0.52, 0.28, 48, 1, true]} />
+          <cylinderGeometry args={[0.5, 0.52, 0.28, seg.cyl, 1, true]} />
           <GlazeMaterial {...mat} />
         </mesh>
       )}
 
       {shape === "bowl" && (
         <mesh position={[0, 0.05, 0]}>
-          <cylinderGeometry args={[0.32, 0.34, 0.12, 48, 1, true]} />
+          <cylinderGeometry args={[0.32, 0.34, 0.12, seg.cyl, 1, true]} />
           <GlazeMaterial {...mat} />
         </mesh>
       )}
@@ -335,22 +361,22 @@ function Vessel({
         <>
           {/* 蓋 */}
           <mesh position={[0, 1.3, 0]} scale={[1, 0.35, 1]}>
-            <sphereGeometry args={[0.45, 32, 16]} />
+            <sphereGeometry args={[0.45, seg.sphW, seg.sphH]} />
             <GlazeMaterial {...mat} />
           </mesh>
           {/* つまみ */}
           <mesh position={[0, 1.52, 0]}>
-            <sphereGeometry args={[0.1, 16, 12]} />
+            <sphereGeometry args={[0.1, lowPoly ? 5 : 16, lowPoly ? 3 : 12]} />
             <GlazeMaterial {...mat} />
           </mesh>
           {/* 注ぎ口 */}
           <mesh position={[1.05, 0.85, 0]} rotation={[0, 0, -0.9]}>
-            <cylinderGeometry args={[0.07, 0.15, 0.75, 20]} />
+            <cylinderGeometry args={[0.07, 0.15, 0.75, lowPoly ? 5 : 20]} />
             <GlazeMaterial {...mat} />
           </mesh>
           {/* 持ち手 */}
           <mesh position={[-1.05, 0.75, 0]} rotation={[0, 0, 0.2]}>
-            <torusGeometry args={[0.32, 0.06, 14, 36]} />
+            <torusGeometry args={[0.32, 0.06, seg.tube, lowPoly ? 6 : 36]} />
             <GlazeMaterial {...mat} />
           </mesh>
         </>
@@ -369,6 +395,12 @@ export type VesselCanvasProps = {
   gloss?: number;
   tone?: number;
   autoRotate?: boolean;
+  /** 自動回転の速さ。負の値で逆回転 */
+  autoRotateSpeed?: number;
+  /** 器の表示倍率 */
+  zoom?: number;
+  /** 焼成前の粗いプレビュー。分割数を落としたローポリのモデルで表示する */
+  lowPoly?: boolean;
 };
 
 export default function VesselCanvas({
@@ -380,9 +412,12 @@ export default function VesselCanvas({
   gloss = 70,
   tone = 60,
   autoRotate = true,
+  autoRotateSpeed = 1.6,
+  zoom = 1,
+  lowPoly = false,
 }: VesselCanvasProps) {
   const spec = resolveVesselSpec(shape, custom);
-  const bottomY = (-spec.height * spec.scale) / 2 - 0.02;
+  const bottomY = (-spec.height * spec.scale * zoom) / 2 - 0.02;
   return (
     <Canvas
       className="vessel-canvas"
@@ -397,6 +432,8 @@ export default function VesselCanvas({
         shape={shape}
         custom={custom}
         glaze={{ texturePath, hex, dissolveKey, gloss, tone }}
+        zoom={zoom}
+        lowPoly={lowPoly}
       />
       <ContactShadows
         position={[0, bottomY, 0]}
@@ -409,7 +446,7 @@ export default function VesselCanvas({
         enablePan={false}
         enableZoom={false}
         autoRotate={autoRotate}
-        autoRotateSpeed={1.6}
+        autoRotateSpeed={autoRotateSpeed}
         minPolarAngle={Math.PI / 4}
         maxPolarAngle={(Math.PI * 3) / 4}
       />
