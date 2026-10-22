@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import ColorWheel from "@/components/ColorWheel";
 import FiringPanel from "@/components/FiringPanel";
+import type { FiringProgress } from "@/lib/firing-run";
 import HslSliderPicker from "@/components/HslSliderPicker";
 import ProfileSketcher from "@/components/ProfileSketcher";
 import VesselCanvas from "@/components/VesselCanvas";
@@ -184,7 +185,8 @@ export default function Home() {
 
   // 焼成: FIRE を押すたびに fireKey を進めて Step 3 で生成を走らせる
   const [fireKey, setFireKey] = useState(0);
-  const [firedTexture, setFiredTexture] = useState<string | null>(null);
+  // 焼成の進捗 (温度・途中の絵・粒・GLB)。焼き上がった器は progress.glb を VesselCanvas で表示する
+  const [firingProgress, setFiringProgress] = useState<FiringProgress | null>(null);
   const [firing, setFiring] = useState(false);
   const [rotateDir, setRotateDir] = useState(1);
 
@@ -210,7 +212,7 @@ export default function Home() {
   };
 
   const startFiring = () => {
-    setFiredTexture(null);
+    setFiringProgress(null);
     setFiring(true);
     setFireKey((k) => k + 1);
     setStep(3);
@@ -223,7 +225,7 @@ export default function Home() {
 
   // Step 1 では釉薬をかける前の素地を表示し、Step 2 では選択中の釉薬の単色（DB 上の色）を
   // 即座に器に載せる。テストピース画像はテクスチャとして使わない。
-  // 焼成後 (Step 3 以降) は生成テクスチャを載せる
+  // 焼成後 (Step 3 以降) は手続き生成の器の代わりに焼き上がった GLB を表示する
   const showingClay = step === 1;
   const preview = showingClay
     ? {
@@ -234,7 +236,7 @@ export default function Home() {
         tone: CLAY_TONE,
       }
     : {
-        texturePath: step >= 3 ? firedTexture : null,
+        texturePath: null,
         hex: glaze?.hex ?? null,
         dissolveKey:
           livePreviewHex !== null ? "live" : `glaze:${glaze?.id ?? "none"}`,
@@ -245,6 +247,12 @@ export default function Home() {
   const inFlow = view === "main" && !about;
   const firingNow = step === 3 && firing;
   const showResult = step === 3 && !firing;
+  // 焼き上がった器の GLB (焼成中・未生成は null)
+  const firedGlb = step >= 3 && !firing ? firingProgress?.glb ?? null : null;
+  // 焼成中に届く途中経過の粒。届くまではローポリのまま (焼成開始で急にリッチにしない)
+  const firingPoints = firingNow ? firingProgress?.points ?? null : null;
+  const inKiln = firingNow && firingPoints === null;
+  const lowPoly = step < 3 || inKiln;
   // 器の 3D プレビューを出す画面。形の一覧・一筆描き中は出さない
   const showViewer = inFlow && (step >= 2 || formView === "preview");
 
@@ -646,10 +654,12 @@ export default function Home() {
               atmosphere,
               temp,
             }}
+            shape={shape}
+            custom={customVessel}
             thickness={thickness}
             t={t}
-            onTexture={setFiredTexture}
             onGeneratingChange={setFiring}
+            onProgress={setFiringProgress}
           />
 
           {step === 3 && (
@@ -729,7 +739,7 @@ export default function Home() {
 
           {showViewer && (
             <div
-              className={`panel viewer ${firingNow ? "is-firing" : "finegrid"}`}
+              className={`panel viewer ${inKiln ? "is-firing" : firingNow ? "" : "finegrid"}`}
             >
               <VesselCanvas
                 shape={shape}
@@ -739,8 +749,10 @@ export default function Home() {
                 dissolveKey={preview.dissolveKey}
                 gloss={preview.gloss}
                 tone={preview.tone}
-                zoom={step >= 3 ? 1 : PREVIEW_ZOOM}
-                lowPoly={step < 3}
+                zoom={lowPoly ? PREVIEW_ZOOM : 1}
+                lowPoly={lowPoly}
+                glb={firedGlb}
+                points={firingPoints}
                 autoRotateSpeed={ROTATE_SPEED * rotateDir}
               />
             </div>

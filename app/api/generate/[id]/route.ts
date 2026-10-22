@@ -1,14 +1,20 @@
 // ジョブのステータス取得 (GET) とキャンセル (DELETE)。
 // RunPod の /status/{id} /cancel/{id} をそのまま中継する。
+// 投入時と同じ `?api=v5` を付けると v5 endpoint に問い合わせる。
 
-import { configMissingResponse, runpodConfig } from "@/lib/runpod";
+import {
+  configMissingResponse,
+  parseRunpodApi,
+  runpodConfig,
+} from "@/lib/runpod";
 
 export async function GET(
-  _req: Request,
+  req: Request,
   ctx: RouteContext<"/api/generate/[id]">
 ) {
-  const config = runpodConfig();
-  if (!config) return configMissingResponse();
+  const api = parseRunpodApi(req);
+  const config = runpodConfig(api);
+  if (!config) return configMissingResponse(api);
 
   const { id } = await ctx.params;
   try {
@@ -31,11 +37,12 @@ export async function GET(
 }
 
 export async function DELETE(
-  _req: Request,
+  req: Request,
   ctx: RouteContext<"/api/generate/[id]">
 ) {
-  const config = runpodConfig();
-  if (!config) return configMissingResponse();
+  const api = parseRunpodApi(req);
+  const config = runpodConfig(api);
+  if (!config) return configMissingResponse(api);
 
   const { id } = await ctx.params;
   try {

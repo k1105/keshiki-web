@@ -1,20 +1,28 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { additivesForColor, thicknessDesc } from "@/lib/recipe";
+import { SEGER_ROWS, type FiringUiState } from "@/lib/firing-request";
+import { renderVesselDepthPng } from "@/lib/depth";
+import { firingCapabilities } from "@/lib/firing-capabilities";
+import { createMockJobClient } from "@/lib/firing-mock";
 import {
-  buildGenerateInput,
-  SEGER_ROWS,
-  type FiringUiState,
-} from "@/lib/firing-request";
+  initialProgress,
+  runFiring,
+  type FiringProgress,
+  type FiringStage,
+} from "@/lib/firing-run";
 import {
-  isGenerateError,
-  type GenerateError,
-  type GenerateOutput,
-  type JobStatusResponse,
-  type JobSubmitResponse,
-} from "@/lib/glaze_prompt";
+  DELTA_E_FAR,
+  HYOMEN_LABEL,
+  SHOSEI_LABEL,
+  SOJI_LABEL,
+  YUSEIJO_A_LABEL,
+  YUSEIJO_B_LABEL,
+} from "@/lib/generate_v5";
+import { liveJobClient } from "@/lib/job-client";
 import type { Strings } from "@/lib/i18n";
+import type { CustomVessel, VesselShape } from "@/lib/vessels";
 
 export type FiringPanelProps = {
   /** Step 3 が表示されているか。非表示中は進行中のジョブをキャンセルする */
@@ -22,186 +30,139 @@ export type FiringPanelProps = {
   /** 「焼成する」を押すたびに増える。値が変わったら新しく焼成する */
   fireKey: number;
   ui: FiringUiState;
+  /** 深度画像の元になる器の形 */
+  shape: VesselShape;
+  custom: CustomVessel | null;
   thickness: number;
   t: Strings;
-  /** 焼き上がった生成テクスチャ。未生成・生成前は null */
-  onTexture: (url: string | null) => void;
   /** 生成中かどうか。次のステップへの遷移を止めるために使う */
   onGeneratingChange: (generating: boolean) => void;
+  /** 焼成の進捗 (温度・途中の絵・粒・GLB)。焼き上がった器の表示と演出はこれを見て描く */
+  onProgress?: (progress: FiringProgress | null) => void;
 };
 
-// 生成の進行状態。config は本番 API 未設定 (単色表示のまま案内を出す)
-type Phase =
-  | "submitting"
-  | "queued"
-  | "running"
-  | "done"
-  | "failed"
-  | "config";
-
-const POLL_MS = 2000; // ガイドの推奨: 1〜2 秒間隔でポーリング
+const SETTLED: FiringStage[] = ["done", "failed", "config"];
 
 export default function FiringPanel({
   active,
   fireKey,
   ui,
+  shape,
+  custom,
   thickness,
   t,
-  onTexture,
   onGeneratingChange,
+  onProgress,
 }: FiringPanelProps) {
-  const [phase, setPhase] = useState<Phase>("submitting");
-  const [error, setError] = useState<GenerateError | null>(null);
-  const [result, setResult] = useState<GenerateOutput | null>(null);
+  const [progress, setProgress] = useState<FiringProgress>(() => initialProgress());
   const [retryKey, setRetryKey] = useState(0);
 
   // 生成リクエストは焼成を開始した時点の UI 状態から組む
   const uiRef = useRef(ui);
   uiRef.current = ui;
-  const callbacksRef = useRef({ onTexture, onGeneratingChange });
-  callbacksRef.current = { onTexture, onGeneratingChange };
+  const vesselRef = useRef({ shape, custom });
+  vesselRef.current = { shape, custom };
+  const callbacksRef = useRef({ onGeneratingChange, onProgress });
+  callbacksRef.current = { onGeneratingChange, onProgress };
 
   // 焼成の実行単位。同じ runKey で結果が確定済みなら Step 3 に戻ってきても再焼成しない
   const runKey = `${fireKey}:${retryKey}`;
   const settledRunRef = useRef<string | null>(null);
+  // 3D だけやり直すときに使う v5 の結果 (同じ fireKey の間だけ有効)
+  const resumeRef = useRef<{ fireKey: number; progress: FiringProgress } | null>(null);
+
+  // 本番 (proxy 経由) か疑似応答か。疑似応答は器の形から絵・粒・GLB を作る
+  const caps = useMemo(() => firingCapabilities(), []);
+  const client = useMemo(
+    () =>
+      caps.mock
+        ? createMockJobClient({ getVessel: () => vesselRef.current, speed: caps.mockSpeed })
+        : liveJobClient,
+    [caps]
+  );
 
   useEffect(() => {
     if (!active) return;
     if (settledRunRef.current === runKey) return;
-    let disposed = false;
-    let timer: ReturnType<typeof setInterval> | null = null;
-    let jobId: string | null = null;
-    let settled = false;
-    const markSettled = () => {
-      settled = true;
-      settledRunRef.current = runKey;
-    };
+    const controller = new AbortController();
+    const resume =
+      resumeRef.current && resumeRef.current.fireKey === fireKey
+        ? resumeRef.current.progress
+        : null;
+    resumeRef.current = null;
 
-    const stopPolling = () => {
-      if (timer) {
-        clearInterval(timer);
-        timer = null;
-      }
-    };
-
-    const fail = (err: GenerateError, ph: Phase = "failed") => {
-      if (disposed) return;
-      markSettled();
-      setError(err);
-      setPhase(ph);
-    };
-
-    const cancelJob = (id: string) => {
-      fetch(`/api/generate/${id}`, { method: "DELETE" }).catch(() => {});
-    };
-
-    const poll = async () => {
-      if (!jobId || settled) return;
-      try {
-        const res = await fetch(`/api/generate/${jobId}`);
-        const data: JobStatusResponse & GenerateError = await res.json();
-        if (disposed || settled) return;
-        if (!res.ok) {
-          stopPolling();
-          fail(data);
-          return;
-        }
-        switch (data.status) {
-          case "IN_QUEUE":
-            setPhase("queued");
-            break;
-          case "IN_PROGRESS":
-          case "RUNNING":
-            setPhase("running");
-            break;
-          case "COMPLETED": {
-            stopPolling();
-            const output = data.output;
-            if (!output || isGenerateError(output)) {
-              fail(output ?? { error: "empty_output", message: "出力が空でした" });
-            } else if (!("images" in output) || output.images.length === 0) {
-              fail({ error: "empty_output", message: "画像が返されませんでした" });
-            } else {
-              markSettled();
-              setResult(output);
-              setPhase("done");
-            }
-            break;
-          }
-          case "CANCELLED":
-          case "FAILED":
-          case "TIMED_OUT": {
-            stopPolling();
-            // 失敗理由: ワーカー起因は output.message、RunPod 起因 (timeout 等) は error に入る
-            const output = data.output as { message?: string } | undefined;
-            fail({
-              error: data.status,
-              message:
-                (typeof output?.message === "string"
-                  ? output.message
-                  : undefined) ?? data.error,
-            });
-            break;
-          }
-        }
-      } catch {
-        // 一時的なネットワーク断は次のポーリングに任せる
-      }
+    const publish = (p: FiringProgress) => {
+      setProgress(p);
+      callbacksRef.current.onProgress?.(p);
     };
 
     (async () => {
-      setPhase("submitting");
-      setError(null);
-      setResult(null);
+      publish(initialProgress());
+
+      // 形 → 深度画像 (フロントで描く)。WebGL が使えない等で失敗したら焼成失敗にする
+      let depthPng: string;
       try {
-        const res = await fetch("/api/generate", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(buildGenerateInput(uiRef.current)),
-        });
-        const data: JobSubmitResponse & GenerateError = await res.json();
-        if (disposed) {
-          if (data?.id) cancelJob(data.id);
-          return;
-        }
-        if (res.status === 503) {
-          fail(data, "config");
-          return;
-        }
-        if (!res.ok || !data.id) {
-          fail(data ?? { error: "pod_api_unreachable" });
-          return;
-        }
-        jobId = data.id;
-        setPhase("queued");
-        void poll();
-        timer = setInterval(poll, POLL_MS);
+        const { shape, custom } = vesselRef.current;
+        depthPng = renderVesselDepthPng(shape, custom);
       } catch (e) {
-        fail({ error: "pod_api_unreachable", message: String(e) });
+        settledRunRef.current = runKey;
+        publish({
+          ...initialProgress(),
+          stage: "failed",
+          failedAt: "v5",
+          error: { error: "depth_render_failed", message: String(e) },
+        });
+        return;
       }
+
+      const result = await runFiring(
+        {
+          ui: uiRef.current,
+          depthPng,
+          resume: resume?.output ? { output: resume.output } : undefined,
+        },
+        {
+          client,
+          caps,
+          signal: controller.signal,
+          timeoutMessage: t.fireTimeout,
+          onProgress: publish,
+        }
+      ).catch((e): FiringProgress => ({
+        ...initialProgress(),
+        stage: "failed",
+        failedAt: "v5",
+        error: { error: "unexpected", message: String(e) },
+      }));
+      if (controller.signal.aborted) return;
+      if (SETTLED.includes(result.stage)) settledRunRef.current = runKey;
+      if (result.stage === "failed" && result.failedAt === "3d" && result.output) {
+        resumeRef.current = { fireKey, progress: result };
+      }
+      publish(result);
     })();
 
     return () => {
-      disposed = true;
-      stopPolling();
       // 進行中のまま Step 3 を離れたら RunPod 側もキャンセルする (戻ってきたら再焼成)
-      if (jobId && !settled) cancelJob(jobId);
+      controller.abort();
     };
-  }, [active, runKey]);
+  }, [active, runKey, fireKey, client, caps, t.fireTimeout]);
+
+  const phase = progress.stage;
+  const error = progress.error;
+  const result = progress.output;
+  const generating = !SETTLED.includes(phase);
+  const canRetry3d = phase === "failed" && progress.failedAt === "3d" && !!progress.output;
 
   const glaze = ui.glaze;
   const additives = glaze
     ? additivesForColor(glaze.hsl)
     : [{ key: "無添加 (透明釉ベース)", val: "-" }];
 
-  const generating =
-    phase === "submitting" || phase === "queued" || phase === "running";
-  const textureUrl = result?.images[0]?.url ?? null;
+  const recipe = progress.recipe ?? result?.recipe ?? null;
+  const colorFar =
+    recipe?.delta_e_to_color != null && recipe.delta_e_to_color >= DELTA_E_FAR;
 
-  // 焼き上がったら生成テクスチャを器のプレビューへ反映する
-  useEffect(() => {
-    callbacksRef.current.onTexture(textureUrl);
-  }, [textureUrl]);
   useEffect(() => {
     callbacksRef.current.onGeneratingChange(generating);
   }, [generating]);
@@ -209,11 +170,23 @@ export default function FiringPanel({
   if (!active) return null;
 
   // 焼成中は全画面の焼成演出になり、進行状況だけを中央に出す
-  if (phase === "submitting" || phase === "queued" || phase === "running") {
+  // (温度・途中の絵・粒の演出は次の項目。ここでは段階名と温度・途中の絵の step を文字で出す)
+  if (phase !== "done" && phase !== "failed" && phase !== "config") {
+    const stage3d =
+      phase === "running3d" && progress.stage3d
+        ? t.stages3d[progress.stage3d as keyof typeof t.stages3d] ?? progress.stage3d
+        : null;
     return (
       <div className="firing-label" role="status">
         <div className="firing-title">{t.firing}</div>
         <div className="firing-phase">{t.phases[phase]}</div>
+        {stage3d && <div className="firing-phase">{stage3d}</div>}
+        {recipe && <div className="firing-phase">{recipe.temp}℃</div>}
+        {progress.preview && (
+          <div className="firing-phase">
+            {progress.preview.step} / {progress.preview.steps ?? 30}
+          </div>
+        )}
       </div>
     );
   }
@@ -238,14 +211,44 @@ export default function FiringPanel({
               className="link"
               onClick={() => setRetryKey((k) => k + 1)}
             >
-              {t.retry}
+              {canRetry3d ? t.retry3d : t.retry}
             </button>
           )}
         </div>
       )}
 
+      {colorFar && (
+        <div className="recipe-notice">
+          <div className="recipe-notice-message">{t.colorFar}</div>
+        </div>
+      )}
+
       {/* レシピ本文はデザインに合わせて言語切替に関わらず日本語表記 */}
       <div className="recipe-body">
+        {/* v5 が選んだ実在レシピ (産総研 DB)。一般公開しない前提 */}
+        {recipe && (
+          <div className="recipe-block recipe-block-wide">
+            <div className="rb-ttl">選ばれた釉薬</div>
+            <div className="recipe-row">
+              <span className="key">- 外観</span>
+              <span className="val">{recipe.appearance_ja}</span>
+            </div>
+            <div className="recipe-row">
+              <span className="key">- 艶 / 透明度 / 質感</span>
+              <span className="val">
+                {HYOMEN_LABEL[recipe.hyomen]} / {YUSEIJO_A_LABEL[recipe.yuseijo_a]} /{" "}
+                {YUSEIJO_B_LABEL[recipe.yuseijo_b]}
+              </span>
+            </div>
+            {recipe.relaxed.length > 0 && (
+              <div className="recipe-row">
+                <span className="key">- 外した条件</span>
+                <span className="val">{recipe.relaxed.join(", ")}</span>
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="recipe-block">
           <div className="rb-ttl">基礎釉</div>
           <div className="recipe-row"><span className="key">- 長石</span><span className="val">40</span></div>
@@ -279,15 +282,19 @@ export default function FiringPanel({
           <div className="rb-ttl">焼成条件</div>
           <div className="recipe-row">
             <span className="key">- 素地</span>
-            <span className="val">{ui.clay}</span>
+            <span className="val">
+              {recipe ? SOJI_LABEL[recipe.soji] : ui.clay}
+            </span>
           </div>
           <div className="recipe-row">
             <span className="key">- 焼成温度</span>
-            <span className="val">{ui.temp}℃</span>
+            <span className="val">{recipe ? recipe.temp : ui.temp}℃</span>
           </div>
           <div className="recipe-row">
             <span className="key">- 焼成雰囲気</span>
-            <span className="val">{ui.atmosphere}</span>
+            <span className="val">
+              {recipe ? `${SHOSEI_LABEL[recipe.shosei]}焼成` : ui.atmosphere}
+            </span>
           </div>
           <div className="recipe-row">
             <span className="key">- 施釉</span>

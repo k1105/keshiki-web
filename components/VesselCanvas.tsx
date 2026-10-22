@@ -4,6 +4,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls, ContactShadows } from "@react-three/drei";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { pointsToBuffers, type Points3D } from "@/lib/generate_3d";
+import type { PointsStage } from "@/lib/firing-run";
 import {
   resolveVesselSpec,
   type CustomVessel,
@@ -385,6 +388,140 @@ function Vessel({
   );
 }
 
+
+/** GLTF のシーンが持つ GPU リソースを全部解放する (長時間稼働対策) */
+function disposeObject(root: THREE.Object3D) {
+  root.traverse((o) => {
+    if (!(o instanceof THREE.Mesh)) return;
+    o.geometry.dispose();
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    for (const m of mats) {
+      for (const v of Object.values(m)) {
+        if (v instanceof THREE.Texture) v.dispose();
+      }
+      m.dispose();
+    }
+  });
+}
+
+/**
+ * 焼き上がった器 (3D API の GLB、data URL)。
+ * 読み込んだら手続き生成の器と同じ高さ・同じ底の位置になるように正規化して置く。
+ * GLB は y が上で返ってくる (docs/api/serverless_api_3d.md)
+ */
+function GlbModel({
+  url,
+  height,
+  bottomY,
+}: {
+  url: string;
+  /** 表示したい高さ (手続き生成の器と揃える) */
+  height: number;
+  bottomY: number;
+}) {
+  const [scene, setScene] = useState<THREE.Group | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    let loaded: THREE.Group | null = null;
+    new GLTFLoader()
+      .loadAsync(url)
+      .then((gltf) => {
+        if (cancelled) {
+          disposeObject(gltf.scene);
+          return;
+        }
+        const root = gltf.scene;
+        // 底を原点に、高さを 1 に正規化してから表示サイズに合わせる
+        const box = new THREE.Box3().setFromObject(root);
+        const size = box.getSize(new THREE.Vector3());
+        const center = box.getCenter(new THREE.Vector3());
+        const s = 1 / Math.max(size.y, 1e-6);
+        root.scale.setScalar(s);
+        root.position.set(-center.x * s, -box.min.y * s, -center.z * s);
+        const holder = new THREE.Group();
+        holder.add(root);
+        loaded = holder;
+        setScene(holder);
+      })
+      .catch((e) => {
+        console.error("GLB load failed", e);
+      });
+    return () => {
+      cancelled = true;
+      if (loaded) disposeObject(loaded);
+      setScene(null);
+    };
+  }, [url]);
+
+  if (!scene) return null;
+  return <primitive object={scene} scale={height} position={[0, bottomY, 0]} />;
+}
+
+export type ProgressPoints = { stage: PointsStage; res?: number; points: Points3D };
+
+// 粒の大きさ (器の高さ 2 のときの値)。粗い形は大きく、細かい・色付きは小さく
+const POINT_SIZE: Record<PointsStage, number> = {
+  coarse_shape: 0.11,
+  fine_shape: 0.055,
+  color_points: 0.045,
+};
+
+/**
+ * 3D API の途中経過の粒 (docs/api/serverless_api_progress.md 3)。
+ * 粗い形 → 細かい形 → 色付きの順に置き換わる。色の無い粒は釉薬の色で描く
+ */
+function PointCloud({
+  data,
+  height,
+  bottomY,
+  hex,
+}: {
+  data: ProgressPoints;
+  height: number;
+  bottomY: number;
+  hex: string | null;
+}) {
+  const built = useMemo(() => {
+    const c = new THREE.Color(hex ?? FALLBACK_HEX);
+    const { position, color } = pointsToBuffers(data.points, 1, [c.r, c.g, c.b]);
+    // 高さを器に揃え、底を bottomY に置く
+    let minY = Infinity;
+    let maxY = -Infinity;
+    for (let i = 1; i < position.length; i += 3) {
+      if (position[i] < minY) minY = position[i];
+      if (position[i] > maxY) maxY = position[i];
+    }
+    const scale = height / Math.max(maxY - minY, 1e-6);
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(position, 3));
+    geometry.setAttribute("color", new THREE.BufferAttribute(color, 3));
+    const material = new THREE.PointsMaterial({
+      size: (POINT_SIZE[data.stage] * height) / 2,
+      vertexColors: true,
+      sizeAttenuation: true,
+    });
+    return { geometry, material, scale, y: bottomY - minY * scale };
+  }, [data, height, bottomY, hex]);
+
+  useEffect(
+    () => () => {
+      built.geometry.dispose();
+      built.material.dispose();
+    },
+    [built]
+  );
+
+  return (
+    <points
+      geometry={built.geometry}
+      material={built.material}
+      scale={built.scale}
+      position={[0, built.y, 0]}
+    />
+  );
+}
+
 export type VesselCanvasProps = {
   shape: VesselShape;
   custom?: CustomVessel | null;
@@ -401,6 +538,10 @@ export type VesselCanvasProps = {
   zoom?: number;
   /** 焼成前の粗いプレビュー。分割数を落としたローポリのモデルで表示する */
   lowPoly?: boolean;
+  /** 焼き上がった器の GLB (data URL)。指定時は手続き生成の器の代わりに表示する */
+  glb?: string | null;
+  /** 焼成中の途中経過の粒。glb が無いときに手続き生成の器の代わりに表示する */
+  points?: ProgressPoints | null;
 };
 
 export default function VesselCanvas({
@@ -415,9 +556,12 @@ export default function VesselCanvas({
   autoRotateSpeed = 1.6,
   zoom = 1,
   lowPoly = false,
+  glb = null,
+  points = null,
 }: VesselCanvasProps) {
   const spec = resolveVesselSpec(shape, custom);
-  const bottomY = (-spec.height * spec.scale * zoom) / 2 - 0.02;
+  const vesselHeight = spec.height * spec.scale * zoom;
+  const bottomY = -vesselHeight / 2 - 0.02;
   return (
     <Canvas
       className="vessel-canvas"
@@ -428,13 +572,19 @@ export default function VesselCanvas({
       <ambientLight intensity={0.9} />
       <directionalLight position={[3, 5, 2]} intensity={2.2} />
       <directionalLight position={[-3, 2, -3]} intensity={0.6} />
-      <Vessel
-        shape={shape}
-        custom={custom}
-        glaze={{ texturePath, hex, dissolveKey, gloss, tone }}
-        zoom={zoom}
-        lowPoly={lowPoly}
-      />
+      {glb ? (
+        <GlbModel url={glb} height={vesselHeight} bottomY={bottomY + 0.02} />
+      ) : points ? (
+        <PointCloud data={points} height={vesselHeight} bottomY={bottomY + 0.02} hex={hex} />
+      ) : (
+        <Vessel
+          shape={shape}
+          custom={custom}
+          glaze={{ texturePath, hex, dissolveKey, gloss, tone }}
+          zoom={zoom}
+          lowPoly={lowPoly}
+        />
+      )}
       <ContactShadows
         position={[0, bottomY, 0]}
         opacity={0.35}
