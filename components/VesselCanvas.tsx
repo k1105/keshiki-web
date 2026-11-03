@@ -7,7 +7,9 @@ import { OrbitControls, ContactShadows } from "@react-three/drei";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { pointsToBuffers, type Points3D } from "@/lib/generate_3d";
 import type { PointsStage } from "@/lib/firing-run";
+import { getVesselModel, loadVesselModel } from "@/lib/vessel-models";
 import {
+  isModelShape,
   resolveVesselSpec,
   type CustomVessel,
   type VesselShape,
@@ -23,6 +25,20 @@ type GlazeProps = {
 
 const FALLBACK_HEX = "#b8aa98";
 const DISSOLVE_DURATION = 1.4; // 秒
+
+// 描画領域はパネル (グリッド) より OVERSCAN 倍大きく取り、器がグリッドからはみ出しても
+// 切れないようにする。カメラの画角も同じ倍率で広げ、パネル内の見え方は変えない
+const OVERSCAN = 1.3;
+const BASE_FOV = 32;
+const CANVAS_FOV =
+  (2 * Math.atan(OVERSCAN * Math.tan((BASE_FOV * Math.PI) / 360)) * 180) / Math.PI;
+const CANVAS_STYLE: React.CSSProperties = {
+  position: "absolute",
+  left: `${-(OVERSCAN - 1) * 50}%`,
+  top: `${-(OVERSCAN - 1) * 50}%`,
+  width: `${OVERSCAN * 100}%`,
+  height: `${OVERSCAN * 100}%`,
+};
 
 // 焼成前のローポリ表示: 回転体の分割数を極端に落とし、フラットシェーディングで面を立たせる
 const LOW_POLY_RADIAL = 7; // 周方向の分割数（通常 64）
@@ -301,7 +317,32 @@ function Vessel({
 }) {
   const spec = useMemo(() => resolveVesselSpec(shape, custom), [shape, custom]);
 
+  // GLB の形 (埴輪・バッグ・花・猫): 正規化済みのジオメトリをキャッシュから取り、
+  // この mesh 用に複製して使う (キャッシュ本体は dispose しない)
+  const modelKey = isModelShape(shape) ? shape : null;
+  const [modelGeometry, setModelGeometry] = useState<THREE.BufferGeometry | null>(() =>
+    modelKey ? getVesselModel(modelKey) : null
+  );
+  useEffect(() => {
+    if (!modelKey) {
+      setModelGeometry(null);
+      return;
+    }
+    let cancelled = false;
+    loadVesselModel(modelKey)
+      .then((g) => {
+        if (!cancelled) setModelGeometry(g);
+      })
+      .catch((e) => console.error("vessel model load failed", e));
+    return () => {
+      cancelled = true;
+    };
+  }, [modelKey]);
+  const modelClone = useMemo(() => modelGeometry?.clone() ?? null, [modelGeometry]);
+  useEffect(() => () => modelClone?.dispose(), [modelClone]);
+
   const points = useMemo(() => {
+    if (spec.profile.length === 0) return [];
     const v = spec.profile.map(([x, y]) => new THREE.Vector2(x, y));
     if (lowPoly) {
       // 折れ線プロファイルもスプラインに通して点数を間引く
@@ -328,6 +369,20 @@ function Vessel({
     tone: glaze.tone,
     flat: lowPoly,
   };
+
+  if (modelKey) {
+    if (!modelClone) return null;
+    return (
+      <group
+        scale={spec.scale * zoom}
+        position={[0, (-spec.height * spec.scale * zoom) / 2, 0]}
+      >
+        <mesh geometry={modelClone}>
+          <GlazeMaterial {...mat} />
+        </mesh>
+      </group>
+    );
+  }
 
   return (
     <group
@@ -565,8 +620,9 @@ export default function VesselCanvas({
   return (
     <Canvas
       className="vessel-canvas"
+      style={CANVAS_STYLE}
       dpr={[1, 2]}
-      camera={{ position: [0, 0.7, 4.6], fov: 32 }}
+      camera={{ position: [0, 0.7, 4.6], fov: CANVAS_FOV }}
       gl={{ alpha: true, antialias: true }}
     >
       <ambientLight intensity={0.9} />

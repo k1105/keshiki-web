@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { additivesForColor, thicknessDesc } from "@/lib/recipe";
+import { additivesForColor } from "@/lib/recipe";
 import { SEGER_ROWS, type FiringUiState } from "@/lib/firing-request";
-import { renderVesselDepthPng } from "@/lib/depth";
+import { DEFAULT_CAPTURE_ANGLE, renderVesselDepthPng, type CaptureAngle } from "@/lib/depth";
 import { firingCapabilities } from "@/lib/firing-capabilities";
 import { createMockJobClient } from "@/lib/firing-mock";
 import {
@@ -13,15 +13,17 @@ import {
   type FiringStage,
 } from "@/lib/firing-run";
 import {
+  baseConditionsOf,
   DELTA_E_FAR,
-  HYOMEN_LABEL,
   SHOSEI_LABEL,
   SOJI_LABEL,
-  YUSEIJO_A_LABEL,
-  YUSEIJO_B_LABEL,
+  type RecipeV5,
+  type SegerV5,
 } from "@/lib/generate_v5";
+import { loadGlazeIndex, pickGlazeRecipe } from "@/lib/glaze-index";
 import { liveJobClient } from "@/lib/job-client";
 import type { Strings } from "@/lib/i18n";
+import { preloadVesselModel } from "@/lib/vessel-models";
 import type { CustomVessel, VesselShape } from "@/lib/vessels";
 
 export type FiringPanelProps = {
@@ -33,7 +35,8 @@ export type FiringPanelProps = {
   /** 深度画像の元になる器の形 */
   shape: VesselShape;
   custom: CustomVessel | null;
-  thickness: number;
+  /** 深度画像を撮る角度 (ヨー・俯角)。省略で既定の正面やや上から */
+  captureAngle?: CaptureAngle;
   t: Strings;
   /** 生成中かどうか。次のステップへの遷移を止めるために使う */
   onGeneratingChange: (generating: boolean) => void;
@@ -43,13 +46,168 @@ export type FiringPanelProps = {
 
 const SETTLED: FiringStage[] = ["done", "failed", "config"];
 
+// 温度カウンター: 焼成開始から TEMP_RISE_MS かけて 0 → 焼成温度 (DB) まで上がる。
+// レシピ (温度) は約 1 秒で届くので、届くまでは FALLBACK_TEMP に向けて上がり始める
+const TEMP_RISE_MS = 30_000;
+const FALLBACK_TEMP = 1280;
+
+// ゼーゲル式の表示名 (DB の key → 下付き文字)
+const SEGER_LABEL: Record<keyof SegerV5, string> = {
+  KNaO: "KNaO",
+  Li2O: "Li₂O",
+  MgO: "MgO",
+  CaO: "CaO",
+  SrO: "SrO",
+  BaO: "BaO",
+  ZnO: "ZnO",
+  PbO: "PbO",
+  Al2O3: "Al₂O₃",
+  SiO2: "SiO₂",
+  B2O3: "B₂O₃",
+};
+const SEGER_ORDER = Object.keys(SEGER_LABEL) as (keyof SegerV5)[];
+
+/** 焼成温度のカウンター。毎フレーム再描画しないよう DOM に直接書く */
+function TempCounter({ target, startedAt }: { target: number | null; startedAt: number }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    const goal = target ?? FALLBACK_TEMP;
+    let raf = 0;
+    const tick = () => {
+      const f = Math.min(1, (Date.now() - startedAt) / TEMP_RISE_MS);
+      const eased = 1 - Math.pow(1 - f, 2.2);
+      if (ref.current) ref.current.textContent = String(Math.round(goal * eased));
+      if (f < 1) raf = requestAnimationFrame(tick);
+    };
+    tick();
+    return () => cancelAnimationFrame(raf);
+  }, [target, startedAt]);
+  return (
+    <div className="firing-temp">
+      <span ref={ref}>0</span>°C
+    </div>
+  );
+}
+
+/** 生成途中の絵。新しい絵は前の絵の上にフェードインする */
+function PreviewFrames({ src, frameKey }: { src: string | null; frameKey: string }) {
+  const [layers, setLayers] = useState<{ prev: string | null; cur: string | null; key: string }>({
+    prev: null,
+    cur: null,
+    key: "",
+  });
+  useEffect(() => {
+    setLayers((l) => (l.cur === src ? l : { prev: l.cur, cur: src, key: frameKey }));
+  }, [src, frameKey]);
+  if (!layers.cur) return null;
+  return (
+    <div className="firing-preview" aria-hidden="true">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      {layers.prev && <img src={layers.prev} alt="" />}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img key={layers.key} className="is-in" src={layers.cur} alt="" />
+    </div>
+  );
+}
+
+/** DB の実在レシピ (原料配合・釉名称・ゼーゲル式) */
+function DbRecipe({ recipe }: { recipe: RecipeV5 }) {
+  const formula = recipe.formula;
+  const sections =
+    formula?.sections && formula.sections.length > 0
+      ? formula.sections
+      : formula?.text
+        ? [{ label: "原料配合", text: formula.text }]
+        : [];
+  const seger = recipe.seger
+    ? SEGER_ORDER.filter((k) => recipe.seger![k] > 0).map((k) => ({
+        label: SEGER_LABEL[k],
+        mol: recipe.seger![k],
+      }))
+    : [];
+  return (
+    <>
+      {recipe.glaze_types.length > 0 && (
+        <div className="recipe-block recipe-block-wide">
+          <div className="rb-ttl">釉名称</div>
+          <div className="recipe-text">
+            {recipe.glaze_types.map((g) => g.ja).join("、")}
+          </div>
+        </div>
+      )}
+      {sections.length === 0 && (
+        <div className="recipe-block recipe-block-wide">
+          <div className="rb-ttl">原料配合</div>
+          <div className="recipe-text">記載なし</div>
+        </div>
+      )}
+      {sections.map((s) => (
+        <div className="recipe-block recipe-block-wide" key={s.label}>
+          <div className="rb-ttl">{s.label}</div>
+          <div className="recipe-text">{s.text}</div>
+        </div>
+      ))}
+      {seger.length > 0 && (
+        <div className="recipe-block recipe-block-wide">
+          <div className="rb-ttl">ゼーゲル式</div>
+          <div className="recipe-cols">
+            {seger.map((row) => (
+              <div className="recipe-row" key={row.label}>
+                <span className="key">{row.label}</span>
+                <span className="val">{row.mol.toFixed(2)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+/** レシピが取れなかったとき (API 未設定・失敗) の概算表示 */
+function EstimateRecipe({ ui }: { ui: FiringUiState }) {
+  const additives = ui.glaze
+    ? additivesForColor(ui.glaze.hsl)
+    : [{ key: "無添加 (透明釉ベース)", val: "-" }];
+  return (
+    <>
+      <div className="recipe-block">
+        <div className="rb-ttl">基礎釉（概算）</div>
+        <div className="recipe-row"><span className="key">- 長石</span><span className="val">40</span></div>
+        <div className="recipe-row"><span className="key">- 石灰石</span><span className="val">15</span></div>
+        <div className="recipe-row"><span className="key">- 珪石</span><span className="val">25</span></div>
+        <div className="recipe-row"><span className="key">- カオリン</span><span className="val">10</span></div>
+        <div className="recipe-row"><span className="key">- フリット</span><span className="val">10</span></div>
+      </div>
+      <div className="recipe-block">
+        <div className="rb-ttl">ゼーゲル式（概算）</div>
+        {SEGER_ROWS.map((row) => (
+          <div className="recipe-row" key={row.idx}>
+            <span className="key">{row.label}</span>
+            <span className="val">{row.mol.toFixed(2)}</span>
+          </div>
+        ))}
+      </div>
+      <div className="recipe-block recipe-block-wide">
+        <div className="rb-ttl">添加物（概算）</div>
+        {additives.map((a) => (
+          <div className="recipe-row" key={a.key}>
+            <span className="key">- {a.key}</span>
+            <span className="val">{a.val}</span>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
 export default function FiringPanel({
   active,
   fireKey,
   ui,
   shape,
   custom,
-  thickness,
+  captureAngle = DEFAULT_CAPTURE_ANGLE,
   t,
   onGeneratingChange,
   onProgress,
@@ -60,8 +218,8 @@ export default function FiringPanel({
   // 生成リクエストは焼成を開始した時点の UI 状態から組む
   const uiRef = useRef(ui);
   uiRef.current = ui;
-  const vesselRef = useRef({ shape, custom });
-  vesselRef.current = { shape, custom };
+  const vesselRef = useRef({ shape, custom, angle: captureAngle });
+  vesselRef.current = { shape, custom, angle: captureAngle };
   const callbacksRef = useRef({ onGeneratingChange, onProgress });
   callbacksRef.current = { onGeneratingChange, onProgress };
 
@@ -99,11 +257,14 @@ export default function FiringPanel({
     (async () => {
       publish(initialProgress());
 
-      // 形 → 深度画像 (フロントで描く)。WebGL が使えない等で失敗したら焼成失敗にする
+      // 形 → 深度画像 (フロントで描く)。WebGL が使えない等で失敗したら焼成失敗にする。
+      // GLB の形は先にメッシュを読み込んでおく
       let depthPng: string;
       try {
-        const { shape, custom } = vesselRef.current;
-        depthPng = renderVesselDepthPng(shape, custom);
+        const { shape, custom, angle } = vesselRef.current;
+        await preloadVesselModel(shape);
+        if (controller.signal.aborted) return;
+        depthPng = renderVesselDepthPng(shape, custom, { angle });
       } catch (e) {
         settledRunRef.current = runKey;
         publish({
@@ -115,10 +276,31 @@ export default function FiringPanel({
         return;
       }
 
+      // 釉薬から選んだときは、条件と選択した釉名称に合う実在レシピを索引から 1 件選んで焼く。
+      // 索引が読めない・見つからないときは条件検索 (buildGlazeV5) に落とす
+      const startUi = uiRef.current;
+      let recipeId: string | undefined;
+      if (startUi.mode === "style" && startUi.glazeCodes.length > 0) {
+        try {
+          const index = await loadGlazeIndex();
+          const picked = pickGlazeRecipe(
+            index,
+            baseConditionsOf(startUi),
+            startUi.glazeCodes,
+            fireKey
+          );
+          if (picked) recipeId = picked.imageId;
+        } catch (e) {
+          console.error("glaze index load failed", e);
+        }
+        if (controller.signal.aborted) return;
+      }
+
       const result = await runFiring(
         {
-          ui: uiRef.current,
+          ui: startUi,
           depthPng,
+          recipeId,
           resume: resume?.output ? { output: resume.output } : undefined,
         },
         {
@@ -154,11 +336,6 @@ export default function FiringPanel({
   const generating = !SETTLED.includes(phase);
   const canRetry3d = phase === "failed" && progress.failedAt === "3d" && !!progress.output;
 
-  const glaze = ui.glaze;
-  const additives = glaze
-    ? additivesForColor(glaze.hsl)
-    : [{ key: "無添加 (透明釉ベース)", val: "-" }];
-
   const recipe = progress.recipe ?? result?.recipe ?? null;
   const colorFar =
     recipe?.delta_e_to_color != null && recipe.delta_e_to_color >= DELTA_E_FAR;
@@ -169,25 +346,25 @@ export default function FiringPanel({
 
   if (!active) return null;
 
-  // 焼成中は全画面の焼成演出になり、進行状況だけを中央に出す
-  // (温度・途中の絵・粒の演出は次の項目。ここでは段階名と温度・途中の絵の step を文字で出す)
+  // 焼成中は全画面の焼成演出になり、進行状況と温度、生成途中の絵を出す
   if (phase !== "done" && phase !== "failed" && phase !== "config") {
     const stage3d =
       phase === "running3d" && progress.stage3d
         ? t.stages3d[progress.stage3d as keyof typeof t.stages3d] ?? progress.stage3d
         : null;
+    // 粒が届いたら粒 (VesselCanvas) を見せるので、絵は粒が届くまで
+    const frame = progress.points ? null : progress.preview?.image ?? progress.image ?? null;
+    const frameKey = progress.preview ? `step:${progress.preview.step}` : "final";
     return (
-      <div className="firing-label" role="status">
-        <div className="firing-title">{t.firing}</div>
-        <div className="firing-phase">{t.phases[phase]}</div>
-        {stage3d && <div className="firing-phase">{stage3d}</div>}
-        {recipe && <div className="firing-phase">{recipe.temp}℃</div>}
-        {progress.preview && (
-          <div className="firing-phase">
-            {progress.preview.step} / {progress.preview.steps ?? 30}
-          </div>
-        )}
-      </div>
+      <>
+        <PreviewFrames src={frame} frameKey={frameKey} />
+        <div className="firing-label" role="status">
+          <div className="firing-title">{t.firing}</div>
+          <TempCounter target={recipe?.temp ?? null} startedAt={progress.startedAt} />
+          <div className="firing-phase">{t.phases[phase]}</div>
+          {stage3d && <div className="firing-phase">{stage3d}</div>}
+        </div>
+      </>
     );
   }
 
@@ -223,60 +400,9 @@ export default function FiringPanel({
         </div>
       )}
 
-      {/* レシピ本文はデザインに合わせて言語切替に関わらず日本語表記 */}
+      {/* レシピ本文はデザインに合わせて言語切替に関わらず日本語表記。中身は DB の実在レシピ */}
       <div className="recipe-body">
-        {/* v5 が選んだ実在レシピ (産総研 DB)。一般公開しない前提 */}
-        {recipe && (
-          <div className="recipe-block recipe-block-wide">
-            <div className="rb-ttl">選ばれた釉薬</div>
-            <div className="recipe-row">
-              <span className="key">- 外観</span>
-              <span className="val">{recipe.appearance_ja}</span>
-            </div>
-            <div className="recipe-row">
-              <span className="key">- 艶 / 透明度 / 質感</span>
-              <span className="val">
-                {HYOMEN_LABEL[recipe.hyomen]} / {YUSEIJO_A_LABEL[recipe.yuseijo_a]} /{" "}
-                {YUSEIJO_B_LABEL[recipe.yuseijo_b]}
-              </span>
-            </div>
-            {recipe.relaxed.length > 0 && (
-              <div className="recipe-row">
-                <span className="key">- 外した条件</span>
-                <span className="val">{recipe.relaxed.join(", ")}</span>
-              </div>
-            )}
-          </div>
-        )}
-
-        <div className="recipe-block">
-          <div className="rb-ttl">基礎釉</div>
-          <div className="recipe-row"><span className="key">- 長石</span><span className="val">40</span></div>
-          <div className="recipe-row"><span className="key">- 石灰石</span><span className="val">15</span></div>
-          <div className="recipe-row"><span className="key">- 珪石</span><span className="val">25</span></div>
-          <div className="recipe-row"><span className="key">- カオリン</span><span className="val">10</span></div>
-          <div className="recipe-row"><span className="key">- フリット</span><span className="val">10</span></div>
-        </div>
-
-        <div className="recipe-block">
-          <div className="rb-ttl">ゼーゲル式（概算）</div>
-          {SEGER_ROWS.map((row) => (
-            <div className="recipe-row" key={row.idx}>
-              <span className="key">{row.label}</span>
-              <span className="val">{row.mol.toFixed(2)}</span>
-            </div>
-          ))}
-        </div>
-
-        <div className="recipe-block recipe-block-wide">
-          <div className="rb-ttl">添加物</div>
-          {additives.map((a) => (
-            <div className="recipe-row" key={a.key}>
-              <span className="key">- {a.key}</span>
-              <span className="val">{a.val}</span>
-            </div>
-          ))}
-        </div>
+        {recipe ? <DbRecipe recipe={recipe} /> : <EstimateRecipe ui={ui} />}
 
         <div className="recipe-block recipe-block-wide">
           <div className="rb-ttl">焼成条件</div>
@@ -288,17 +414,13 @@ export default function FiringPanel({
           </div>
           <div className="recipe-row">
             <span className="key">- 焼成温度</span>
-            <span className="val">{recipe ? recipe.temp : ui.temp}℃</span>
+            <span className="val">{recipe ? recipe.temp : ui.temp}°C</span>
           </div>
           <div className="recipe-row">
             <span className="key">- 焼成雰囲気</span>
             <span className="val">
               {recipe ? `${SHOSEI_LABEL[recipe.shosei]}焼成` : ui.atmosphere}
             </span>
-          </div>
-          <div className="recipe-row">
-            <span className="key">- 施釉</span>
-            <span className="val">{thicknessDesc(thickness)}</span>
           </div>
         </div>
       </div>

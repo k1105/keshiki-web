@@ -30,12 +30,38 @@ export const CONCRETE_SHAPES: ShapeKey[] = [
   "bowl",
 ];
 
+// 回転体では作れない形 (Tripo で生成した GLB、public/models/<key>.glb)。
+// 生成は scripts/tripo-generate.mjs。読み込みと正規化は lib/vessel-models.ts
+export type ModelShapeKey = "haniwa" | "handbag" | "flower" | "cat";
+
+export type ModelShape = {
+  url: string;
+  /** 表示したい高さ (回転体のプロファイルと同じ単位)。GLB はこの高さに正規化して置く */
+  height: number;
+  scale: number;
+  /** GLB が public/models に入っていて選べるか。生成したら true にする */
+  ready: boolean;
+};
+
+export const MODEL_SHAPES: Record<ModelShapeKey, ModelShape> = {
+  haniwa: { url: "/models/haniwa.glb", height: 2.3, scale: 1.0, ready: true },
+  handbag: { url: "/models/handbag.glb", height: 1.9, scale: 1.0, ready: true },
+  flower: { url: "/models/flower.glb", height: 1.8, scale: 1.0, ready: true },
+  cat: { url: "/models/cat.glb", height: 2.0, scale: 1.0, ready: true },
+};
+
+export function isModelShape(shape: VesselShape): shape is ModelShapeKey {
+  return shape in MODEL_SHAPES;
+}
+
 // 回転体の断面プロファイル（x = 半径, y = 高さ）。smooth はスプライン補間の有無。
+// model がある形はプロファイルを持たず (空配列)、GLB のメッシュをそのまま使う
 export type VesselSpec = {
   profile: [number, number][];
   smooth: boolean;
   height: number; // プロファイル全体の高さ（センタリング用）
   scale: number; // 形ごとの見た目サイズ調整
+  model?: ModelShape;
 };
 
 // 一筆描きから生成した回転体プロファイル（正規化済み）
@@ -44,12 +70,16 @@ export type CustomVessel = {
   height: number;
 };
 
-export type VesselShape = ShapeKey | "custom";
+export type VesselShape = ShapeKey | ModelShapeKey | "custom";
 
 export function resolveVesselSpec(
   shape: VesselShape,
   custom?: CustomVessel | null
 ): VesselSpec {
+  if (isModelShape(shape)) {
+    const model = MODEL_SHAPES[shape];
+    return { profile: [], smooth: false, height: model.height, scale: model.scale, model };
+  }
   if (shape === "custom") {
     if (custom) {
       return {

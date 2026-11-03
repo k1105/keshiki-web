@@ -1,5 +1,14 @@
 import type { GlazeColor } from "./colors";
 import {
+  HYOMEN_LABEL,
+  YUSEIJO_A_LABEL,
+  YUSEIJO_B_LABEL,
+  type Hyomen,
+  type YuseijoA,
+  type YuseijoB,
+} from "./generate_v5";
+import { glazeStyleByCode } from "./glaze-styles";
+import {
   DEFAULT_ANCHOR,
   type GenerateInput,
   type SegerValues,
@@ -20,12 +29,12 @@ export type FiringMode = "visual" | "style" | "mood";
 export type FiringUiState = {
   mode: FiringMode;
   glaze: GlazeColor | null;
-  expression: string;
-  transparency: number; // 0-100 透明 ← → 乳濁
-  glossiness: number; // 0-100 マット ← → 光沢
-  styleName: string;
-  styleColor: string;
-  styleTexture: string;
+  // 見た目からつくる: 表面状態 / 透明度 / 質感 (v5 の分類そのもの)
+  hyomen: Hyomen;
+  yuseijoA: YuseijoA;
+  yuseijoB: YuseijoB;
+  // 釉薬から選ぶ: 釉名称コード (A01..G12、複数可)
+  glazeCodes: string[];
   mood: string;
   clay: string; // 磁器 / 陶器（白土） / 陶器（赤土）
   atmosphere: string; // 酸化焼成 / 還元焼成
@@ -52,11 +61,7 @@ function segerValues(): SegerValues {
 
 // UI の視覚パラメータを comment_ja 用の日本語句に起こす
 function visualComment(ui: FiringUiState): string {
-  const parts: string[] = [];
-  parts.push(ui.transparency < 50 ? "透明感のある" : "乳濁した");
-  parts.push(ui.glossiness >= 50 ? "光沢のある" : "マットな");
-  if (ui.expression) parts.push(`${ui.expression}の表情の`);
-  return `${parts.join("")}釉薬`;
+  return `${YUSEIJO_A_LABEL[ui.yuseijoA]}で${HYOMEN_LABEL[ui.hyomen]}、${YUSEIJO_B_LABEL[ui.yuseijoB]}な質感の釉薬`;
 }
 
 export function buildGenerateInput(ui: FiringUiState): GenerateInput {
@@ -72,9 +77,10 @@ export function buildGenerateInput(ui: FiringUiState): GenerateInput {
   if (ui.mode === "mood" && ui.mood.trim()) {
     commentParts.push(ui.mood.trim());
   } else if (ui.mode === "style") {
-    commentParts.push(
-      `${ui.styleName}、${ui.styleColor}、${ui.styleTexture}の釉薬`
-    );
+    const names = ui.glazeCodes
+      .map((code) => glazeStyleByCode(code)?.ja)
+      .filter((n): n is string => !!n);
+    commentParts.push(`${names.join("、")}の釉薬`);
   } else {
     commentParts.push(visualComment(ui));
   }

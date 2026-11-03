@@ -1,56 +1,80 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import CaptureDebugger from "@/components/CaptureDebugger";
 import ColorWheel from "@/components/ColorWheel";
 import FiringPanel from "@/components/FiringPanel";
 import type { FiringProgress } from "@/lib/firing-run";
+import GlazePicker, { glazeComboLabel } from "@/components/GlazePicker";
 import HslSliderPicker from "@/components/HslSliderPicker";
 import ProfileSketcher from "@/components/ProfileSketcher";
 import VesselCanvas from "@/components/VesselCanvas";
 import { clayByKey, type ClayKey } from "@/lib/clay";
 import { findClosestColor, type GlazeColor } from "@/lib/colors";
+import { defaultCaptureAngle, type CaptureAngle } from "@/lib/depth";
+import { baseConditionsOf, type Hyomen, type YuseijoA, type YuseijoB } from "@/lib/generate_v5";
+import { loadGlazeIndex, representativeGlazeColor, type GlazeIndex } from "@/lib/glaze-index";
+import { STRINGS, type Lang } from "@/lib/i18n";
 import {
-  choiceLabel,
-  EXPRESSIONS,
-  STRINGS,
-  STYLE_COLORS,
-  STYLE_NAMES,
-  STYLE_TEXTURES,
-  type Choice,
-  type Lang,
-} from "@/lib/i18n";
-import type { CustomVessel, ShapeKey, VesselShape } from "@/lib/vessels";
+  MODEL_SHAPES,
+  type CustomVessel,
+  type ModelShapeKey,
+  type ShapeKey,
+  type VesselShape,
+} from "@/lib/vessels";
 
 // 素地プレビュー（素焼き）の質感。釉薬なしなのでマットに固定
 const CLAY_GLOSS = 6;
 const CLAY_TONE = 50;
+// 釉薬プレビューの色の濃さと、表面状態ごとの光沢
+const GLAZE_TONE = 60;
+const GLAZE_GLOSS: Record<Hyomen, number> = {
+  HyomenKotaku: 85,
+  HyomenHanKotaku: 50,
+  HyomenTsuyakeshi: 12,
+};
+const DEFAULT_GLOSS = 70;
 
 // 焼成前のプレビューは器を小さめに置き、焼き上がりで大きく見せる
 const PREVIEW_ZOOM = 0.76;
 const ROTATE_SPEED = 1.6;
 
+// 焼成温度の既定 (レシピは DB から選ばれるので、API に送る以外では使わない)
+const DEFAULT_TEMP = 1230;
+
+const HYOMEN_OPTIONS: Hyomen[] = ["HyomenKotaku", "HyomenHanKotaku", "HyomenTsuyakeshi"];
+const YUSEIJO_A_OPTIONS: YuseijoA[] = [
+  "YuseijoAMushokuTomei",
+  "YuseijoAYusyokuTomei",
+  "YuseijoAMFutoumei",
+];
+const YUSEIJO_B_OPTIONS: YuseijoB[] = [
+  "YuseijoBKinitsu",
+  "YuseijoBFukinnitsu",
+  "YuseijoBKessho",
+  "YuseijoBKannyu",
+  "YuseijoBLuster",
+];
+
 type CellKey =
-  | "vase"
-  | "haniwa"
-  | "plate"
-  | "handbag"
-  | "teapot"
-  | "flower"
-  | "mug"
-  | "cat"
-  | "surprise";
+  "vase" | "haniwa" | "plate" | "handbag" | "teapot" | "flower" | "mug" | "cat" | "surprise";
 
 // 形の 9 マス。shape の無いマスは 3D モデル未対応のため選択できない。
+// 埴輪・バッグ・花・猫は Tripo で生成した GLB (lib/vessels.ts MODEL_SHAPES)。GLB が無い間は選べない。
 // surprise は一筆描き (Wheel) の入口
-const FORM_CELLS: { key: CellKey; shape?: ShapeKey }[] = [
+const modelCell = (key: ModelShapeKey) => ({
+  key,
+  shape: MODEL_SHAPES[key].ready ? key : undefined,
+});
+const FORM_CELLS: { key: CellKey; shape?: ShapeKey | ModelShapeKey }[] = [
   { key: "vase", shape: "vase" },
-  { key: "haniwa" },
+  modelCell("haniwa"),
   { key: "plate", shape: "plate" },
-  { key: "handbag" },
+  modelCell("handbag"),
   { key: "teapot", shape: "teapot" },
-  { key: "flower" },
+  modelCell("flower"),
   { key: "mug", shape: "mug" },
-  { key: "cat" },
+  modelCell("cat"),
   { key: "surprise" },
 ];
 
@@ -64,8 +88,7 @@ const CLAY_ORDER: { key: ClayKey; dir: string }[] = [
 type Mode = "visual" | "style" | "mood";
 type ColorMode = "wheel" | "slider";
 type View = "title" | "main";
-type FormView = "grid" | "draw" | "preview";
-type GlazeView = "main" | "surface";
+type AppearanceSub = "color" | "surface" | "transparency" | "character";
 
 // ロゴはデザインのピクセル字形をそのままトレースしたもの（フォントに依存させない）
 const LOGO_ROWS = [
@@ -110,78 +133,139 @@ function RotateIcon({ dir }: { dir: "left" | "right" }) {
   );
 }
 
-function ChoiceList({
-  items,
-  selected,
-  onSelect,
-  lang,
-  className = "items",
+/** 一筆描きのモーダル。Esc と背景クリックで閉じる */
+function SketchModal({
+  title,
+  closeLabel,
+  onClose,
+  children,
 }: {
-  items: Choice[];
-  selected: string;
-  onSelect: (v: string) => void;
-  lang: Lang;
-  className?: string;
+  title: string;
+  closeLabel: string;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div
+        className="sketch-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="glaze-modal-head">
+          <span>{title}</span>
+          <button type="button" className="link" onClick={onClose}>
+            {closeLabel}
+          </button>
+        </div>
+        <div className="sketch-modal-body finegrid">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+/** 横並びの選択肢 (単一選択) */
+function InlineChoices<T extends string>({
+  options,
+  selected,
+  label,
+  onSelect,
+}: {
+  options: T[];
+  selected: T;
+  label: (v: T) => string;
+  onSelect: (v: T) => void;
 }) {
   return (
-    <div className={className}>
-      {items.map((c) => (
+    <div className="items is-inline">
+      {options.map((v) => (
         <button
-          key={c.value}
+          key={v}
           type="button"
-          className={`item ${selected === c.value ? "active" : ""}`}
-          onClick={() => onSelect(c.value)}
+          className={`item ${selected === v ? "active" : ""}`}
+          onClick={() => onSelect(v)}
         >
-          -{choiceLabel(c, lang)}
+          -{label(v)}
         </button>
       ))}
     </div>
   );
 }
 
+/** 見出しをクリックすると中身が開く小見出し。閉じているときは現在の値を添える */
+function SubHead({
+  label,
+  value,
+  open,
+  onToggle,
+  children,
+}: {
+  label: string;
+  value?: React.ReactNode;
+  open: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className={`sub ${open ? "is-open" : ""}`}>
+      <button type="button" className="sub-h" onClick={onToggle}>
+        <span>{label}</span>
+        {!open && value != null && <span className="sub-val">{value}</span>}
+      </button>
+      {open && <div className="sub-body">{children}</div>}
+    </div>
+  );
+}
+
 export default function Home() {
-  const [lang, setLang] = useState<Lang>("en");
+  const [lang, setLang] = useState<Lang>("ja");
   const t = STRINGS[lang];
   const [view, setView] = useState<View>("title");
   const [about, setAbout] = useState(false);
 
   const [step, setStep] = useState(1);
-  const [formView, setFormView] = useState<FormView>("grid");
-  const [glazeView, setGlazeView] = useState<GlazeView>("main");
+
+  // Step 1: 見出しは開閉しない (常に全部開いている)。かたちは中央のパネルに出し、一筆描きはモーダルで描く
+  const [sketchOpen, setSketchOpen] = useState(false);
 
   const [shape, setShape] = useState<VesselShape>("vase");
   const [selectedCell, setSelectedCell] = useState<CellKey>("vase");
   const [customVessel, setCustomVessel] = useState<CustomVessel | null>(null);
-  const [glaze, setGlaze] = useState<GlazeColor | null>(() =>
-    findClosestColor("#2f6d5f")
-  );
+  const [glaze, setGlaze] = useState<GlazeColor | null>(() => findClosestColor("#2f6d5f"));
   // HSLスライダー編集中の「指定した色」。編集中はプレビューをディゾルブなしでその場更新する
   const [livePreviewHex, setLivePreviewHex] = useState<string | null>(null);
   const [colorMode, setColorMode] = useState<ColorMode>("wheel");
 
-  const [mode, setMode] = useState<Mode>("visual");
-  const [expression, setExpression] = useState("なめらか");
-  const [transparency, setTransparency] = useState(35);
-  const [glossiness, setGlossiness] = useState(70);
-  const [styleName, setStyleName] = useState("青磁釉");
-  const [styleColor, setStyleColor] = useState("銅青磁釉");
-  const [styleTexture, setStyleTexture] = useState("貫入釉");
+  // Step 2: 3 方式のどれを開いているか。開くまでは見出しだけが並ぶ
+  const [mode, setMode] = useState<Mode | null>(null);
+  const [appearanceSub, setAppearanceSub] = useState<AppearanceSub>("color");
+  const [hyomen, setHyomen] = useState<Hyomen>("HyomenKotaku");
+  const [yuseijoA, setYuseijoA] = useState<YuseijoA>("YuseijoAYusyokuTomei");
+  const [yuseijoB, setYuseijoB] = useState<YuseijoB>("YuseijoBKinitsu");
+  // 釉薬から選ぶ: 気になる釉薬 (glazePicks) はモーダルで自由に選び、
+  // それを含む実在の組み合わせの候補から 1 つ確定したものが glazeCombo。
+  // 焼成に使うのは常に glazeCombo (= データベースに実在する組み合わせ)
+  const [glazePicks, setGlazePicks] = useState<string[]>([]);
+  const [glazeCombo, setGlazeCombo] = useState<string[] | null>(null);
+  const [glazeModal, setGlazeModal] = useState(false);
+  const [glazeIndex, setGlazeIndex] = useState<GlazeIndex | null>(null);
   const [mood, setMood] = useState(
     "きょうは雨上がりの森みたいな、静かで少し湿った感じな気分です。"
   );
 
   const [clayKey, setClayKey] = useState<ClayKey>("stoneware-white");
   const clay = clayByKey(clayKey);
-  const clayDir =
-    CLAY_ORDER.find((c) => c.key === clayKey)?.dir ?? CLAY_ORDER[0].dir;
-  const [atmosphere, setAtmosphere] = useState("還元焼成");
-
-  const [tone, setTone] = useState(60);
-  const [gloss, setGloss] = useState(70);
-  const [flow, setFlow] = useState(30);
-  const [crackle, setCrackle] = useState(50);
-  const [temp, setTemp] = useState(1230);
-  const [thickness, setThickness] = useState(55);
+  const clayDir = CLAY_ORDER.find((c) => c.key === clayKey)?.dir ?? CLAY_ORDER[0].dir;
+  const [atmosphere, setAtmosphere] = useState("酸化焼成");
 
   // 焼成: FIRE を押すたびに fireKey を進めて Step 3 で生成を走らせる
   const [fireKey, setFireKey] = useState(0);
@@ -190,13 +274,50 @@ export default function Home() {
   const [firing, setFiring] = useState(false);
   const [rotateDir, setRotateDir] = useState(1);
 
+  // 深度画像を撮る角度。既定は形ごと (lib/depth.ts defaultCaptureAngle)。
+  // ?debug=capture で開くデバッガーで変えた値 (null でなければ) がそれを上書きする
+  const [captureOverride, setCaptureOverride] = useState<CaptureAngle | null>(null);
+  const captureAngle = captureOverride ?? defaultCaptureAngle(shape);
+  const [captureDebug, setCaptureDebug] = useState(false);
+  useEffect(() => {
+    setCaptureDebug(new URLSearchParams(window.location.search).get("debug") === "capture");
+  }, []);
+
   useEffect(() => {
     document.documentElement.lang = lang;
   }, [lang]);
 
+  // 釉薬から選ぶを開いたら索引を読み、実在する組み合わせを候補に出せるようにする
+  useEffect(() => {
+    if (mode !== "style" || glazeIndex) return;
+    let cancelled = false;
+    loadGlazeIndex()
+      .then((idx) => {
+        if (!cancelled) setGlazeIndex(idx);
+      })
+      .catch((e) => console.error("glaze index load failed", e));
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, glazeIndex]);
+
+  const baseConditions = useMemo(
+    () => baseConditionsOf({ clay: clay.name, atmosphere }),
+    [clay.name, atmosphere]
+  );
+  // 釉薬から選んでいるとき、確定した組み合わせの実データの代表色 (DB のマンセル値由来)。
+  // 無ければ色相環で選んだ色のまま
+  const styleHex = useMemo(
+    () =>
+      glazeIndex && glazeCombo
+        ? representativeGlazeColor(glazeIndex, baseConditions, glazeCombo)
+        : null,
+    [glazeIndex, baseConditions, glazeCombo]
+  );
+
   const pickCell = (cell: (typeof FORM_CELLS)[number]) => {
     if (cell.key === "surprise") {
-      setFormView("draw");
+      setSketchOpen(true);
       return;
     }
     if (!cell.shape) return;
@@ -208,7 +329,23 @@ export default function Home() {
     setCustomVessel(v);
     setShape("custom");
     setSelectedCell("surprise");
-    setFormView("preview");
+    setSketchOpen(false);
+  };
+
+  const toggleGlazePick = (code: string) => {
+    setGlazePicks((codes) =>
+      codes.includes(code) ? codes.filter((c) => c !== code) : [...codes, code]
+    );
+  };
+
+  const openGlazeModal = () => {
+    setMode("style");
+    setGlazeModal(true);
+  };
+
+  const confirmGlazeCombo = (codes: string[]) => {
+    setGlazeCombo(codes);
+    setGlazeModal(false);
   };
 
   const startFiring = () => {
@@ -218,10 +355,10 @@ export default function Home() {
     setStep(3);
   };
 
-  const backToGlaze = () => {
-    setGlazeView("main");
-    setStep(2);
-  };
+  const canFire =
+    mode === "visual" ||
+    (mode === "style" && glazeCombo !== null) ||
+    (mode === "mood" && mood.trim().length > 0);
 
   // Step 1 では釉薬をかける前の素地を表示し、Step 2 では選択中の釉薬の単色（DB 上の色）を
   // 即座に器に載せる。テストピース画像はテクスチャとして使わない。
@@ -235,38 +372,40 @@ export default function Home() {
         gloss: CLAY_GLOSS,
         tone: CLAY_TONE,
       }
-    : {
-        texturePath: null,
-        hex: glaze?.hex ?? null,
-        dissolveKey:
-          livePreviewHex !== null ? "live" : `glaze:${glaze?.id ?? "none"}`,
-        gloss,
-        tone,
-      };
+    : mode === "style" && styleHex
+      ? {
+          texturePath: null,
+          hex: styleHex,
+          dissolveKey: `style:${styleHex}`,
+          gloss: DEFAULT_GLOSS,
+          tone: GLAZE_TONE,
+        }
+      : {
+          texturePath: null,
+          hex: glaze?.hex ?? null,
+          dissolveKey: livePreviewHex !== null ? "live" : `glaze:${glaze?.id ?? "none"}`,
+          gloss: mode === "visual" ? GLAZE_GLOSS[hyomen] : DEFAULT_GLOSS,
+          tone: GLAZE_TONE,
+        };
 
   const inFlow = view === "main" && !about;
   const firingNow = step === 3 && firing;
   const showResult = step === 3 && !firing;
   // 焼き上がった器の GLB (焼成中・未生成は null)
-  const firedGlb = step >= 3 && !firing ? firingProgress?.glb ?? null : null;
+  const firedGlb = step >= 3 && !firing ? (firingProgress?.glb ?? null) : null;
   // 焼成中に届く途中経過の粒。届くまではローポリのまま (焼成開始で急にリッチにしない)
-  const firingPoints = firingNow ? firingProgress?.points ?? null : null;
+  const firingPoints = firingNow ? (firingProgress?.points ?? null) : null;
+  // 焼成中に届く生成途中の絵 (または焼き上がりの絵)。粒が届いたら粒を優先する
+  const firingFrame =
+    firingNow && firingPoints === null
+      ? (firingProgress?.preview?.image ?? firingProgress?.image ?? null)
+      : null;
   const inKiln = firingNow && firingPoints === null;
   const lowPoly = step < 3 || inKiln;
-  // 器の 3D プレビューを出す画面。形の一覧・一筆描き中は出さない
-  const showViewer = inFlow && (step >= 2 || formView === "preview");
+  // 器の 3D プレビューを出す画面。Step 1 は中央にかたちの一覧 (または一筆描き) を出すので出さない
+  const showViewer = inFlow && step >= 2;
 
-  const adjustRows = [
-    { key: "tone", value: tone, set: setTone, min: 0, max: 100, unit: "" },
-    { key: "gloss", value: gloss, set: setGloss, min: 0, max: 100, unit: "" },
-    { key: "flow", value: flow, set: setFlow, min: 0, max: 100, unit: "" },
-    { key: "crackle", value: crackle, set: setCrackle, min: 0, max: 100, unit: "" },
-    { key: "temp", value: temp, set: setTemp, min: 1100, max: 1300, unit: "℃" },
-    { key: "thickness", value: thickness, set: setThickness, min: 0, max: 100, unit: "" },
-  ] as const;
-
-  const backdropState =
-    view === "title" ? "is-title" : inFlow && firingNow ? "is-firing" : "";
+  const backdropState = view === "title" ? "is-title" : inFlow && firingNow ? "is-firing" : "";
 
   return (
     <>
@@ -355,21 +494,13 @@ export default function Home() {
 
         {/* 制作フロー。ABOUT / タイトル表示中も状態を保つため、隠すだけでアンマウントしない */}
         <div className="flow" hidden={!inFlow}>
-          {/* Step 1: 形・素地・焼成雰囲気 */}
+          {/* Step 1: 形・素地・焼成雰囲気。見出しと中身は常に全部出す (開閉なし) */}
           {step === 1 && (
             <>
               <div className="col">
+                <div className="section-title">{t.selectBase}</div>
                 <div className="group">
-                  <button
-                    type="button"
-                    className="h"
-                    onClick={() => setFormView("grid")}
-                  >
-                    +{t.form}
-                  </button>
-                </div>
-                <div className="group">
-                  <div className="h">+{t.clayBody}</div>
+                  <div className="h">{t.clayBody}</div>
                   <div className="items">
                     {CLAY_ORDER.map((c) => (
                       <button
@@ -384,7 +515,7 @@ export default function Home() {
                   </div>
                 </div>
                 <div className="group">
-                  <div className="h">+{t.atmosphere}</div>
+                  <div className="h">{t.atmosphere}</div>
                   <div className="items">
                     <button
                       type="button"
@@ -404,15 +535,12 @@ export default function Home() {
                 </div>
               </div>
 
-              {formView === "grid" && (
-                <div className="panel shape-grid">
+              <div className="panel shape-grid">
                   {FORM_CELLS.map((cell) => {
                     const selectable = cell.key === "surprise" || !!cell.shape;
                     const selected = selectedCell === cell.key;
-                    const label =
-                      cell.key === "surprise" && selected
-                        ? t.shapes.wheel
-                        : t.shapes[cell.key];
+                    const cellLabel =
+                      cell.key === "surprise" && selected ? t.shapes.wheel : t.shapes[cell.key];
                     return (
                       <button
                         key={cell.key}
@@ -423,119 +551,140 @@ export default function Home() {
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img src={`/shapes/${clayDir}/${cell.key}.jpg`} alt="" />
-                        <span className="shape-label">{label}</span>
+                        <span className="shape-label">{cellLabel}</span>
                       </button>
                     );
                   })}
-                </div>
-              )}
+              </div>
 
-              {formView === "draw" && (
-                <div className="panel finegrid">
+              {/* 一筆描き: モーダルで描き、描き終わると閉じて custom の形になる */}
+              {sketchOpen && (
+                <SketchModal
+                  title={t.shapes.wheel}
+                  closeLabel={t.glazeClose}
+                  onClose={() => setSketchOpen(false)}
+                >
                   <ProfileSketcher
                     onShapeDrawn={pickCustomShape}
                     hint={t.drawHint}
                     tooShortText={t.drawTooShort}
                   />
-                </div>
+                </SketchModal>
               )}
 
               <div className="nav">
-                <button
-                  type="button"
-                  className="link"
-                  disabled={formView === "draw"}
-                  onClick={() => setStep(2)}
-                >
+                <button type="button" className="link" onClick={() => setStep(2)}>
                   {t.next} <Arrow dir="right" />
                 </button>
               </div>
             </>
           )}
 
-          {/* Step 2: 釉薬のつくり方。左カラムの見出しで 3 方式を切り替える */}
-          {step === 2 && glazeView === "main" && (
+          {/* Step 2: 釉薬のつくり方。見出しだけが並び、クリックした方式が開く (他はグレーアウト) */}
+          {step === 2 && (
             <>
               <div className="col is-accordion">
-                <div className="group">
-                  <button
-                    type="button"
-                    className="h"
-                    onClick={() => setMode("visual")}
-                  >
-                    +{t.color}
-                  </button>
-                  {mode === "visual" && (
-                    <>
-                      <div className="subtabs">
-                        <button
-                          type="button"
-                          className={colorMode === "wheel" ? "active" : ""}
-                          onClick={() => setColorMode("wheel")}
-                        >
-                          -{t.colorWheel}
-                        </button>
-                        <span> / </span>
-                        <button
-                          type="button"
-                          className={colorMode === "slider" ? "active" : ""}
-                          onClick={() => setColorMode("slider")}
-                        >
-                          {t.hslSliders}
-                        </button>
-                      </div>
-                      {colorMode === "wheel" ? (
-                        <ColorWheel
-                          selected={glaze}
-                          onSelect={setGlaze}
-                          labels={t.wheelFilters}
-                        />
-                      ) : (
-                        <HslSliderPicker
-                          selected={glaze}
-                          onSelect={setGlaze}
-                          onPreviewColor={setLivePreviewHex}
-                          labels={t}
-                        />
-                      )}
-                    </>
-                  )}
-                </div>
+                <div className="section-title">{t.selectLook}</div>
 
                 <div className="group">
                   <button
                     type="button"
-                    className="h"
-                    onClick={() => setMode("style")}
+                    className={`h ${mode === "visual" ? "active" : mode ? "is-dim" : ""}`}
+                    onClick={() => setMode("visual")}
                   >
-                    +{t.glazeStyle}
+                    {t.appearance}
                   </button>
-                  {mode === "style" && (
-                    <div className="style-groups">
-                      <div className="style-label">{t.styleName}</div>
-                      <ChoiceList
-                        className="items is-inline"
-                        items={STYLE_NAMES}
-                        selected={styleName}
-                        onSelect={setStyleName}
-                        lang={lang}
-                      />
-                      <div className="style-label">{t.styleColor}</div>
-                      <ChoiceList
-                        className="items is-inline"
-                        items={STYLE_COLORS}
-                        selected={styleColor}
-                        onSelect={setStyleColor}
-                        lang={lang}
-                      />
-                      <div className="style-label">{t.styleTexture}</div>
-                      <ChoiceList
-                        className="items is-inline"
-                        items={STYLE_TEXTURES}
-                        selected={styleTexture}
-                        onSelect={setStyleTexture}
-                        lang={lang}
-                      />
+                  {mode === "visual" && (
+                    <div className="subs">
+                      <SubHead
+                        label={t.color}
+                        value={
+                          glaze && (
+                            <span
+                              className="sub-swatch"
+                              style={{
+                                background: livePreviewHex ?? glaze.hex,
+                              }}
+                            />
+                          )
+                        }
+                        open={appearanceSub === "color"}
+                        onToggle={() => setAppearanceSub("color")}
+                      >
+                        <div className="subtabs">
+                          <button
+                            type="button"
+                            className={colorMode === "wheel" ? "active" : ""}
+                            onClick={() => setColorMode("wheel")}
+                          >
+                            -{t.colorWheel}
+                          </button>
+                          <span> / </span>
+                          <button
+                            type="button"
+                            className={colorMode === "slider" ? "active" : ""}
+                            onClick={() => setColorMode("slider")}
+                          >
+                            {t.hslSliders}
+                          </button>
+                        </div>
+                        {colorMode === "wheel" ? (
+                          <ColorWheel
+                            selected={glaze}
+                            onSelect={setGlaze}
+                            labels={t.wheelFilters}
+                          />
+                        ) : (
+                          <HslSliderPicker
+                            selected={glaze}
+                            onSelect={setGlaze}
+                            onPreviewColor={setLivePreviewHex}
+                            labels={t}
+                          />
+                        )}
+                      </SubHead>
+
+                      <SubHead
+                        label={t.surface}
+                        value={t.hyomen[hyomen]}
+                        open={appearanceSub === "surface"}
+                        onToggle={() => setAppearanceSub("surface")}
+                      >
+                        <InlineChoices
+                          options={HYOMEN_OPTIONS}
+                          selected={hyomen}
+                          label={(v) => t.hyomen[v]}
+                          onSelect={setHyomen}
+                        />
+                      </SubHead>
+
+                      <SubHead
+                        label={t.transparency}
+                        value={t.yuseijoA[yuseijoA]}
+                        open={appearanceSub === "transparency"}
+                        onToggle={() => setAppearanceSub("transparency")}
+                      >
+                        <InlineChoices
+                          options={YUSEIJO_A_OPTIONS}
+                          selected={yuseijoA}
+                          label={(v) => t.yuseijoA[v]}
+                          onSelect={setYuseijoA}
+                        />
+                      </SubHead>
+
+                      <SubHead
+                        label={t.character}
+                        value={t.yuseijoB[yuseijoB]}
+                        open={appearanceSub === "character"}
+                        onToggle={() => setAppearanceSub("character")}
+                      >
+                        <InlineChoices
+                          options={YUSEIJO_B_OPTIONS}
+                          selected={yuseijoB}
+                          label={(v) => t.yuseijoB[v]}
+                          onSelect={setYuseijoB}
+                        />
+                      </SubHead>
                     </div>
                   )}
                 </div>
@@ -543,10 +692,37 @@ export default function Home() {
                 <div className="group">
                   <button
                     type="button"
-                    className="h"
+                    className={`h ${mode === "style" ? "active" : mode ? "is-dim" : ""}`}
+                    onClick={openGlazeModal}
+                  >
+                    {t.glazeHeading}
+                  </button>
+                  {mode === "style" && (
+                    <div className="subs">
+                      {glazeCombo ? (
+                        <div className="glaze-combo">
+                          {styleHex && (
+                            <span className="glaze-combo-swatch" style={{ background: styleHex }} />
+                          )}
+                          {glazeComboLabel(glazeCombo, lang)}
+                        </div>
+                      ) : (
+                        <div className="glaze-combo is-none">{t.glazeNone}</div>
+                      )}
+                      <button type="button" className="glaze-change" onClick={openGlazeModal}>
+                        -{glazeCombo ? t.glazeChange : t.glazeOpen}
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="group">
+                  <button
+                    type="button"
+                    className={`h ${mode === "mood" ? "active" : mode ? "is-dim" : ""}`}
                     onClick={() => setMode("mood")}
                   >
-                    +{t.withWords}
+                    {t.inspiration}
                   </button>
                   {mode === "mood" && (
                     <textarea
@@ -564,72 +740,7 @@ export default function Home() {
                   <Arrow dir="left" /> {t.back}
                 </button>
                 <span className="sep">/</span>
-                {mode === "visual" ? (
-                  <button
-                    type="button"
-                    className="link"
-                    onClick={() => setGlazeView("surface")}
-                  >
-                    {t.next} <Arrow dir="right" />
-                  </button>
-                ) : (
-                  <button type="button" className="link" onClick={startFiring}>
-                    {t.fire} <Arrow dir="right" />
-                  </button>
-                )}
-              </div>
-            </>
-          )}
-
-          {/* Step 2 (見た目からつくる) の 2 画面目: 表情・透明度・光沢 */}
-          {step === 2 && glazeView === "surface" && (
-            <>
-              <div className="col">
-                <div className="group">
-                  <div className="h">+{t.surfaceEffect}</div>
-                  <ChoiceList
-                    items={EXPRESSIONS}
-                    selected={expression}
-                    onSelect={setExpression}
-                    lang={lang}
-                  />
-                </div>
-                <div className="group">
-                  <div className="h">+{t.transparency}</div>
-                  <input
-                    type="range"
-                    className="slider"
-                    min={0}
-                    max={100}
-                    value={transparency}
-                    aria-label={t.transparency}
-                    onChange={(e) => setTransparency(Number(e.target.value))}
-                  />
-                </div>
-                <div className="group">
-                  <div className="h">+{t.gloss}</div>
-                  <input
-                    type="range"
-                    className="slider"
-                    min={0}
-                    max={100}
-                    value={glossiness}
-                    aria-label={t.gloss}
-                    onChange={(e) => setGlossiness(Number(e.target.value))}
-                  />
-                </div>
-              </div>
-
-              <div className="nav">
-                <button
-                  type="button"
-                  className="link"
-                  onClick={() => setGlazeView("main")}
-                >
-                  <Arrow dir="left" /> {t.back}
-                </button>
-                <span className="sep">/</span>
-                <button type="button" className="link" onClick={startFiring}>
+                <button type="button" className="link" disabled={!canFire} onClick={startFiring}>
                   {t.fire} <Arrow dir="right" />
                 </button>
               </div>
@@ -641,22 +752,20 @@ export default function Home() {
             active={step === 3}
             fireKey={fireKey}
             ui={{
-              mode,
+              mode: mode ?? "visual",
               glaze,
-              expression,
-              transparency,
-              glossiness,
-              styleName,
-              styleColor,
-              styleTexture,
+              hyomen,
+              yuseijoA,
+              yuseijoB,
+              glazeCodes: glazeCombo ?? [],
               mood,
               clay: clay.name,
               atmosphere,
-              temp,
+              temp: DEFAULT_TEMP,
             }}
             shape={shape}
             custom={customVessel}
-            thickness={thickness}
+            captureAngle={captureAngle}
             t={t}
             onGeneratingChange={setFiring}
             onProgress={setFiringProgress}
@@ -664,17 +773,9 @@ export default function Home() {
 
           {step === 3 && (
             <div className="nav">
-              <button type="button" className="link" onClick={backToGlaze}>
+              <button type="button" className="link" onClick={() => setStep(2)}>
                 <Arrow dir="left" /> {t.back}
               </button>
-              {showResult && (
-                <>
-                  <span className="sep">/</span>
-                  <button type="button" className="link" onClick={() => setStep(4)}>
-                    {t.adjust}
-                  </button>
-                </>
-              )}
             </div>
           )}
 
@@ -699,47 +800,25 @@ export default function Home() {
             </>
           )}
 
-          {/* Step 4: 調整 */}
-          {step === 4 && (
-            <>
-              <div className="col">
-                <div className="group">
-                  <div className="h">+{t.adjust}</div>
-                  <div className="adjust-rows">
-                    {adjustRows.map((row) => (
-                      <label className="adjust-row" key={row.key}>
-                        <span className="adjust-label">
-                          <span>-{t.adjustRows[row.key]}</span>
-                          <span>
-                            {row.value}
-                            {row.unit}
-                          </span>
-                        </span>
-                        <input
-                          type="range"
-                          className="slider"
-                          min={row.min}
-                          max={row.max}
-                          value={row.value}
-                          onChange={(e) => row.set(Number(e.target.value))}
-                        />
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <div className="nav">
-                <button type="button" className="link" onClick={() => setStep(3)}>
-                  <Arrow dir="left" /> {t.back}
-                </button>
-              </div>
-            </>
+          {step === 2 && glazeModal && (
+            <GlazePicker
+              lang={lang}
+              t={t}
+              index={glazeIndex}
+              conditions={baseConditions}
+              picks={glazePicks}
+              onTogglePick={toggleGlazePick}
+              combo={glazeCombo}
+              onConfirm={confirmGlazeCombo}
+              onClose={() => setGlazeModal(false)}
+            />
           )}
 
           {showViewer && (
             <div
-              className={`panel viewer ${inKiln ? "is-firing" : firingNow ? "" : "finegrid"}`}
+              className={`panel viewer ${inKiln ? "is-firing" : firingNow ? "" : "finegrid"} ${
+                firingFrame ? "is-hidden" : ""
+              }`}
             >
               <VesselCanvas
                 shape={shape}
@@ -759,6 +838,16 @@ export default function Home() {
           )}
         </div>
       </div>
+
+      {captureDebug && (
+        <CaptureDebugger
+          shape={shape}
+          custom={customVessel}
+          angle={captureAngle}
+          onChange={setCaptureOverride}
+          onClose={() => setCaptureDebug(false)}
+        />
+      )}
     </>
   );
 }

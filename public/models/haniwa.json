@@ -1,0 +1,11 @@
+{
+  "key": "haniwa",
+  "task_id": "d7643c89-c3da-45fe-9744-5ccd157d7f01",
+  "model": "P1-20260311",
+  "face_limit": 3000,
+  "texture": false,
+  "credits_consumed": 40,
+  "source_image": "public/shapes/white/haniwa.jpg",
+  "generated_with": "tripo-cli 0.5.1 (tripo make --model tripo-p1 -p face_limit=3000 -p texture=false -p pbr=false)",
+  "generated_at": "2026-10-27T11:45:11+00:00"
+}

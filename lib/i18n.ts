@@ -1,57 +1,7 @@
-// UI 文言の英日切替。選択値そのもの（焼成リクエストに載る日本語）は変えず、表示ラベルだけを切り替える
+// UI 文言の英日切替。選択値そのもの（焼成リクエストに載る値）は変えず、表示ラベルだけを切り替える
+import type { Hyomen, YuseijoA, YuseijoB } from "./generate_v5";
+
 export type Lang = "en" | "ja";
-
-// value は状態・API に使う日本語の正本、en は英語表示用のラベル
-export type Choice = { value: string; en: string };
-
-export const EXPRESSIONS: Choice[] = [
-  { value: "なめらか", en: "Smooth" },
-  { value: "ざらつき", en: "Rough" },
-  { value: "流れ", en: "Flow" },
-  { value: "斑点", en: "Speckled" },
-  { value: "貫入", en: "Crazing" },
-  { value: "結晶", en: "Crystalline" },
-];
-
-export const STYLE_NAMES: Choice[] = [
-  { value: "志野釉", en: "Shino" },
-  { value: "織部釉", en: "Oribe" },
-  { value: "天目釉", en: "Tenmoku" },
-  { value: "青磁釉", en: "Celadon" },
-  { value: "黄瀬戸釉", en: "Ki-Seto" },
-  { value: "瀬戸黒釉", en: "Seto-Guro" },
-  { value: "辰砂釉", en: "Shinsha" },
-  { value: "白萩釉", en: "Shirahagi" },
-  { value: "海鼠釉", en: "Namako" },
-  { value: "鈞窯釉", en: "Jun" },
-  { value: "月白釉", en: "Geppaku" },
-  { value: "伊羅保釉", en: "Iraho" },
-];
-
-export const STYLE_COLORS: Choice[] = [
-  { value: "瑠璃釉", en: "Lapis" },
-  { value: "トルコ青釉", en: "Turkish Blue" },
-  { value: "銅赤釉", en: "Copper Red" },
-  { value: "銅青磁釉", en: "Copper Celadon" },
-  { value: "鉄釉", en: "Iron" },
-  { value: "柿釉", en: "Kaki" },
-  { value: "黒釉", en: "Black" },
-  { value: "鉄赤釉", en: "Iron Red" },
-  { value: "緑釉", en: "Green" },
-];
-
-export const STYLE_TEXTURES: Choice[] = [
-  { value: "透明釉", en: "Transparent" },
-  { value: "乳濁釉", en: "Opaque" },
-  { value: "マット釉", en: "Matte" },
-  { value: "貫入釉", en: "Crackle" },
-  { value: "結晶釉", en: "Crystalline" },
-  { value: "ラスター釉", en: "Luster" },
-];
-
-export function choiceLabel(c: Choice, lang: Lang): string {
-  return lang === "en" ? c.en : c.value;
-}
 
 const en = {
   about: "ABOUT",
@@ -59,13 +9,13 @@ const en = {
   share: "SHARE",
   start: "Start",
 
+  selectBase: "Select the Base",
   form: "FORM",
   clayBody: "CLAY BODY",
   atmosphere: "ATMOSPHERE",
   next: "NEXT",
   back: "BACK",
   fire: "FIRE",
-  adjust: "ADJUST",
 
   shapes: {
     vase: "VASE",
@@ -90,6 +40,11 @@ const en = {
   drawHint: "Draw a single line from base to rim.",
   drawTooShort: "The line is too short. Draw a longer one.",
 
+  selectLook: "Select the Look",
+  appearance: "APPEARANCE",
+  glazeHeading: "GLAZE",
+  inspiration: "INSPIRATION",
+
   color: "COLOR",
   colorWheel: "Color Wheel",
   hslSliders: "HSL Sliders",
@@ -97,16 +52,42 @@ const en = {
   hue: "Hue",
   saturation: "Saturation",
   lightness: "Lightness",
-  glazeStyle: "GLAZE STYLE",
-  styleName: "Tradition",
-  styleColor: "Color",
-  styleTexture: "Finish",
-  withWords: "CREATE FROM INSPIRATION",
+  surface: "SURFACE",
+  transparency: "TRANSPARENCY",
+  character: "CHARACTER",
+  hyomen: {
+    HyomenKotaku: "Glossy",
+    HyomenHanKotaku: "Semi-gloss",
+    HyomenTsuyakeshi: "Matte",
+  } as Record<Hyomen, string>,
+  yuseijoA: {
+    YuseijoAMFutoumei: "Opaque",
+    YuseijoAYusyokuTomei: "Tinted clear",
+    YuseijoAMushokuTomei: "Colorless clear",
+  } as Record<YuseijoA, string>,
+  yuseijoB: {
+    YuseijoBKinitsu: "Uniform",
+    YuseijoBFukinnitsu: "Mottled",
+    YuseijoBKessho: "Crystalline",
+    YuseijoBKannyu: "Crackle",
+    YuseijoBLuster: "Luster",
+  } as Record<YuseijoB, string>,
+  glazeHint: "Pick any glazes you like. Greyed ones have no data together with your picks, but can still be chosen.",
+  glazeSelected: "selected",
+  glazeNone: "Not chosen yet",
+  glazeOpen: "Choose",
+  glazeChange: "Change",
+  glazeModalTitle: "GLAZE",
+  glazeCandidates: "Combinations in the database",
+  glazeCandidatesAll: "Pick a glaze on the left to narrow these down.",
+  glazeCandidatesNear: "No combination contains all of your picks. Closest ones:",
+  glazeCandidatesEmpty: "No combination with these glazes for this clay and atmosphere.",
+  glazeCount: (n: number) => `${n} ${n === 1 ? "recipe" : "recipes"}`,
+  glazeMore: (n: number) => `${n} more. Pick more glazes to narrow down.`,
+  glazeConfirm: "CONFIRM",
+  glazeClose: "CLOSE",
+  glazeLoading: "Loading the database...",
   moodPlaceholder: "e.g. A forest after rain, quiet and a little damp...",
-
-  surfaceEffect: "Surface Effect",
-  transparency: "Transparency",
-  gloss: "Gloss",
 
   firing: "FIRING...",
   phases: {
@@ -141,15 +122,6 @@ const en = {
   rotateLeft: "Rotate left",
   rotateRight: "Rotate right",
 
-  adjustRows: {
-    tone: "Tone",
-    gloss: "Gloss",
-    flow: "Flow",
-    crackle: "Crackle",
-    temp: "Temperature",
-    thickness: "Thickness",
-  },
-
   aboutHeading: [
     "Visualizing the Beauty of Glaze with AI.",
     "Another Way to Experience Ceramics.",
@@ -169,13 +141,13 @@ const ja: Strings = {
   share: "SHARE",
   start: "はじめる",
 
+  selectBase: "ベースを選ぶ",
   form: "かたち",
   clayBody: "素地",
   atmosphere: "焼成雰囲気",
   next: "次へ",
   back: "戻る",
   fire: "焼成する",
-  adjust: "調整する",
 
   shapes: {
     vase: "壺",
@@ -200,6 +172,11 @@ const ja: Strings = {
   drawHint: "底から口へ向かって、器の輪郭を一筆で描いてください。",
   drawTooShort: "線が短すぎます。もう少し長く描いてください",
 
+  selectLook: "見た目から選ぶ",
+  appearance: "見た目",
+  glazeHeading: "釉薬",
+  inspiration: "感覚でつくる",
+
   color: "色",
   colorWheel: "色相環",
   hslSliders: "HSLスライダー",
@@ -207,16 +184,42 @@ const ja: Strings = {
   hue: "色相",
   saturation: "彩度",
   lightness: "明度",
-  glazeStyle: "釉薬スタイル",
-  styleName: "伝統名称",
-  styleColor: "色や発色",
-  styleTexture: "仕上がりの質感",
-  withWords: "感覚でつくる",
-  moodPlaceholder: "例：雨上がりの森みたいな、静かで少し湿った感じ…",
-
-  surfaceEffect: "表情",
+  surface: "表面",
   transparency: "透明度",
-  gloss: "光沢度",
+  character: "質感",
+  hyomen: {
+    HyomenKotaku: "光沢",
+    HyomenHanKotaku: "半光沢",
+    HyomenTsuyakeshi: "つや消し",
+  },
+  yuseijoA: {
+    YuseijoAMFutoumei: "不透明",
+    YuseijoAYusyokuTomei: "有色透明",
+    YuseijoAMushokuTomei: "無色透明",
+  },
+  yuseijoB: {
+    YuseijoBKinitsu: "均一",
+    YuseijoBFukinnitsu: "不均一",
+    YuseijoBKessho: "結晶",
+    YuseijoBKannyu: "貫入",
+    YuseijoBLuster: "ラスター",
+  },
+  glazeHint: "薄い項目は今の選択と組み合わせたデータがありません(選ぶことはできます)",
+  glazeSelected: "選択中",
+  glazeNone: "未選択",
+  glazeOpen: "選ぶ",
+  glazeChange: "選び直す",
+  glazeModalTitle: "釉薬",
+  glazeCandidates: "データベースにある組み合わせ",
+  glazeCandidatesAll: "左から釉薬を選ぶと絞り込まれます",
+  glazeCandidatesNear: "選んだ釉薬をすべて含む組み合わせはありません。近いもの:",
+  glazeCandidatesEmpty: "この素地・焼成雰囲気では、選んだ釉薬を含む組み合わせがありません",
+  glazeCount: (n: number) => `${n}件`,
+  glazeMore: (n: number) => `ほか${n}件。釉薬を追加で選ぶと絞り込めます`,
+  glazeConfirm: "決定",
+  glazeClose: "閉じる",
+  glazeLoading: "データベースを読み込み中...",
+  moodPlaceholder: "例：雨上がりの森みたいな、静かで少し湿った感じ…",
 
   firing: "焼成中...",
   phases: {
@@ -250,15 +253,6 @@ const ja: Strings = {
   colorFar: "この素地と焼成の組み合わせには近い色の釉薬がありません。いちばん近いものを表示しています",
   rotateLeft: "左に回す",
   rotateRight: "右に回す",
-
-  adjustRows: {
-    tone: "色の濃さ",
-    gloss: "光沢",
-    flow: "流れの強さ",
-    crackle: "貫入の細かさ",
-    temp: "焼成温度",
-    thickness: "施釉の厚み",
-  },
 
   // 仮訳。確定コピーが決まったら差し替える
   aboutHeading: [

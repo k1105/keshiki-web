@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# tripo-cli のローカル状態 (直近タスク ID)
+.tripo/

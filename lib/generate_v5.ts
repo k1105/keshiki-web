@@ -222,85 +222,31 @@ function sojiOf(clay: string): Soji {
   return "SojiToki";
 }
 
-// 表情 (i18n EXPRESSIONS の value) → 質感
-const EXPRESSION_TO_B: Record<string, YuseijoB> = {
-  なめらか: "YuseijoBKinitsu",
-  ざらつき: "YuseijoBFukinnitsu",
-  流れ: "YuseijoBFukinnitsu",
-  斑点: "YuseijoBFukinnitsu",
-  貫入: "YuseijoBKannyu",
-  結晶: "YuseijoBKessho",
-};
-
-// 釉薬スタイルの「色」(i18n STYLE_COLORS の value) → 代表色 (仮)。
-// v5 は色を #rrggbb でしか受けないため、名称を代表色に置き換えて送る
-const STYLE_COLOR_HEX: Record<string, string> = {
-  瑠璃釉: "#1c3a8a",
-  トルコ青釉: "#2aa8b0",
-  銅赤釉: "#8b1a1a",
-  銅青磁釉: "#6f9f8f",
-  鉄釉: "#4a3626",
-  柿釉: "#a24a1c",
-  黒釉: "#151318",
-  鉄赤釉: "#9b3b1f",
-  緑釉: "#3f7a3a",
-};
-
-// 釉薬スタイルの「質感」(i18n STYLE_TEXTURES の value) → 艶・透明度・質感
-function styleTextureTokens(
-  texture: string
-): Pick<GlazeBySelection, "hyomen" | "yuseijo_a" | "yuseijo_b"> {
-  switch (texture) {
-    case "透明釉":
-      return { yuseijo_a: "YuseijoAYusyokuTomei" };
-    case "乳濁釉":
-      return { yuseijo_a: "YuseijoAMFutoumei" };
-    case "マット釉":
-      return { hyomen: "HyomenTsuyakeshi" };
-    case "貫入釉":
-      return { yuseijo_b: "YuseijoBKannyu" };
-    case "結晶釉":
-      return { yuseijo_b: "YuseijoBKessho" };
-    case "ラスター釉":
-      return { yuseijo_b: "YuseijoBLuster" };
-    default:
-      return {};
-  }
+/** Step-1 で決まる条件 (素地・焼成雰囲気)。釉薬の絞り込みと実在レシピの選択に使う */
+export function baseConditionsOf(
+  ui: Pick<FiringUiState, "clay" | "atmosphere">
+): { soji: Soji; shosei: Shosei } {
+  return {
+    soji: sojiOf(ui.clay),
+    shosei: ui.atmosphere.includes("還元") ? "ShouseiKangen" : "ShouseiSanka",
+  };
 }
 
 /**
  * 現行 UI の選択状態 → v5 の glaze。
- * - 見た目からつくる: 色 + 表情/透明度/光沢を分類トークンに落とす
- * - 釉薬スタイル: 色名を代表色に、質感を分類トークンにする (名称 = 志野・織部などは v5 に渡す口がない)
+ * - 見た目からつくる: 色 + 表面状態/透明度/質感 (UI が v5 の分類をそのまま持つ)
+ * - 釉薬から選ぶ: 本線は実在レシピ (recipe_id) で焼く (FiringPanel が索引から選ぶ)。
+ *   索引に見つからなかったときの保険として、素地・焼成と選択中の色だけを送る
  * - 言葉からつくる: v5 に自由文の口がないため、素地・焼成と選択中の色だけを送る
  */
 export function buildGlazeV5(ui: FiringUiState): GlazeBySelection {
-  const glaze: GlazeBySelection = {
-    soji: sojiOf(ui.clay),
-    shosei: ui.atmosphere.includes("還元") ? "ShouseiKangen" : "ShouseiSanka",
-  };
-
-  if (ui.mode === "style") {
-    Object.assign(glaze, styleTextureTokens(ui.styleTexture));
-    const hex = STYLE_COLOR_HEX[ui.styleColor] ?? ui.glaze?.hex;
-    if (hex) glaze.color = hex;
-    return glaze;
-  }
-
+  const glaze: GlazeBySelection = { ...baseConditionsOf(ui) };
   if (ui.glaze) glaze.color = ui.glaze.hex;
-  if (ui.mode === "mood") return glaze;
+  if (ui.mode !== "visual") return glaze;
 
-  // visual: スライダーは 0-100 (透明度: 透明 ← → 乳濁 / 光沢: マット ← → 光沢)
-  glaze.hyomen =
-    ui.glossiness >= 67
-      ? "HyomenKotaku"
-      : ui.glossiness >= 34
-        ? "HyomenHanKotaku"
-        : "HyomenTsuyakeshi";
-  glaze.yuseijo_a =
-    ui.transparency < 50 ? "YuseijoAYusyokuTomei" : "YuseijoAMFutoumei";
-  const b = EXPRESSION_TO_B[ui.expression];
-  if (b) glaze.yuseijo_b = b;
+  glaze.hyomen = ui.hyomen;
+  glaze.yuseijo_a = ui.yuseijoA;
+  glaze.yuseijo_b = ui.yuseijoB;
   return glaze;
 }
 

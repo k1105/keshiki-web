@@ -40,26 +40,36 @@ export default function HslSliderPicker({
     if (closest) onSelect(closest);
   };
 
+  // 各スライダーがどれ (H / S / L) なのか分かるように、頭文字と名前・現在値を添える
   const rows = [
-    { label: labels.hue, value: h, max: 360, set: (v: number) => update(v, s, l) },
-    { label: labels.saturation, value: s, max: 100, set: (v: number) => update(h, v, l) },
-    { label: labels.lightness, value: l, max: 100, set: (v: number) => update(h, s, v) },
+    { short: "H", label: labels.hue, value: h, max: 360, unit: "°", set: (v: number) => update(v, s, l) },
+    { short: "S", label: labels.saturation, value: s, max: 100, unit: "%", set: (v: number) => update(h, v, l) },
+    { short: "L", label: labels.lightness, value: l, max: 100, unit: "%", set: (v: number) => update(h, s, v) },
   ];
 
   return (
     <div className="hsl-sliders">
       {rows.map((row) => (
-        <input
-          key={row.label}
-          type="range"
-          className="slider"
-          min={0}
-          max={row.max}
-          value={row.value}
-          aria-label={row.label}
-          title={row.label}
-          onChange={(e) => row.set(Number(e.target.value))}
-        />
+        <label className="slider-row" key={row.short}>
+          <span className="slider-label">
+            <span>
+              <span className="slider-short">{row.short}</span> {row.label}
+            </span>
+            <span>
+              {row.value}
+              {row.unit}
+            </span>
+          </span>
+          <input
+            type="range"
+            className="slider"
+            min={0}
+            max={row.max}
+            value={row.value}
+            aria-label={row.label}
+            onChange={(e) => row.set(Number(e.target.value))}
+          />
+        </label>
       ))}
     </div>
   );

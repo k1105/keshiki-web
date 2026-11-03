@@ -14,7 +14,14 @@
 import * as THREE from "three";
 import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js";
 import { MeshSurfaceSampler } from "three/examples/jsm/math/MeshSurfaceSampler.js";
-import { buildVesselGroup, DEPTH_CAMERA } from "./depth";
+import {
+  buildVesselGroup,
+  captureCameraPosition,
+  DEFAULT_CAPTURE_ANGLE,
+  DEPTH_CAMERA,
+  type CaptureAngle,
+} from "./depth";
+import { preloadVesselModel } from "./vessel-models";
 import type { GenerateInput3D, GenerateOutput3D, Points3D, Progress3D } from "./generate_3d";
 import type {
   GenerateInputV5,
@@ -27,7 +34,12 @@ import type { JobStatus } from "./glaze_prompt";
 import type { JobApi, JobClient, JobStatusAny } from "./job-client";
 import type { CustomVessel, VesselShape } from "./vessels";
 
-export type MockVessel = { shape: VesselShape; custom: CustomVessel | null };
+export type MockVessel = {
+  shape: VesselShape;
+  custom: CustomVessel | null;
+  /** 深度画像を撮った角度。疑似応答の絵も同じ角度で描く (省略で既定) */
+  angle?: CaptureAngle;
+};
 
 export type MockOptions = {
   /** 絵・粒を作るための器の形 (本物は深度画像から推定するが、モックは形を直接もらう) */
@@ -182,6 +194,7 @@ async function buildV5Frames(input: GenerateInputV5, vessel: MockVessel): Promis
 
   const color = colorOf(input);
   const recipe = mockRecipe(input, color);
+  await preloadVesselModel(vessel.shape);
   const photo = renderVesselPhoto(vessel, color, 1024, { background: "#e9e4dc" });
 
   const frames: Frame[] = [
@@ -240,6 +253,7 @@ async function build3DFrames(input: GenerateInput3D, vessel: MockVessel): Promis
 
   // 本物は画像から形と色を推定する。モックは器の形と、画像の中央付近の色を使う
   const color = await dominantColor(input.image);
+  await preloadVesselModel(vessel.shape);
   const frames: Frame[] = [{ at: 0, status: "IN_QUEUE" }];
   const at = (t: number) => D3_QUEUE_T + t;
 
@@ -311,7 +325,8 @@ function renderVesselPhoto(
 
   const material = new THREE.MeshStandardMaterial({ color, roughness: 0.35, metalness: 0.05 });
   const scene = new THREE.Scene();
-  const group = buildVesselGroup(vessel.shape, vessel.custom, material, DEPTH_CAMERA.zoom);
+  const angle = vessel.angle ?? DEFAULT_CAPTURE_ANGLE;
+  const group = buildVesselGroup(vessel.shape, vessel.custom, material, DEPTH_CAMERA.zoom, angle.yaw);
   scene.add(group);
   scene.add(new THREE.AmbientLight(0xffffff, 0.9));
   const key = new THREE.DirectionalLight(0xffffff, 2.2);
@@ -322,7 +337,7 @@ function renderVesselPhoto(
   scene.add(fill);
 
   const camera = new THREE.PerspectiveCamera(DEPTH_CAMERA.fov, 1, 0.1, 100);
-  camera.position.set(...DEPTH_CAMERA.position);
+  camera.position.set(...captureCameraPosition(angle.pitch));
   camera.lookAt(0, 0, 0);
 
   try {

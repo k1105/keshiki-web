@@ -8,7 +8,9 @@
 // API 側の判定: 値 > 0 の画素が 2% 未満 → ValueError / 器の中の階調が乏しい → meta.depth.warning
 
 import * as THREE from "three";
+import { getVesselModel } from "./vessel-models";
 import {
+  isModelShape,
   resolveVesselSpec,
   type CustomVessel,
   type VesselShape,
@@ -21,11 +23,53 @@ const DEPTH_FAR_LEVEL = 0.25;
 // (試験用サンプルの object_ratio は 0.2 前後)
 const DEPTH_ZOOM = 0.62;
 
-// VesselCanvas と同じカメラ (位置・画角) で描く
-const CAMERA_POSITION: [number, number, number] = [0, 0.7, 4.6];
+// VesselCanvas と同じカメラ (距離・画角) で描く。
+// 従来の固定位置 [0, 0.7, 4.6] を「距離 + 俯角」に分解したもの (既定の俯角 ≒ 8.65°)
+const CAMERA_DISTANCE = Math.hypot(0.7, 4.6);
 const CAMERA_FOV = 32;
-/** 深度画像と同じ構図で描きたいとき用 (疑似応答の絵など) */
-export const DEPTH_CAMERA = { position: CAMERA_POSITION, fov: CAMERA_FOV, zoom: DEPTH_ZOOM };
+
+/**
+ * 深度画像を撮る角度 (度)。
+ * - yaw: 器を縦軸まわりに回す角度 (正で上から見て反時計回り)。回転体では見え方は変わらない
+ * - pitch: 俯角。0 で真横、正でカメラが上から見下ろす。
+ *   depth_input_spec.md: 検証済みは 0° と約 13°、約 24° は失敗 (床が輪になる)
+ */
+export type CaptureAngle = { yaw: number; pitch: number };
+export const DEFAULT_CAPTURE_ANGLE: CaptureAngle = {
+  yaw: 0,
+  pitch: (Math.atan2(0.7, 4.6) * 180) / Math.PI,
+};
+/**
+ * 形ごとの撮影角度。GLB の形は回転体ではないので、正面が出る向き (yaw) が形ごとに違う。
+ * ?debug=capture のデバッガーで決めた値 (角度を JSON でコピー) をここに書き戻す。無い形は DEFAULT_CAPTURE_ANGLE
+ */
+const CAPTURE_ANGLE_BY_SHAPE: Partial<Record<VesselShape, CaptureAngle>> = {
+  haniwa: { yaw: -92, pitch: 8.7 },
+  plate: { yaw: -92, pitch: 17.5 },
+  handbag: { yaw: -112, pitch: 17.5 },
+  teapot: { yaw: -157, pitch: 30 },
+  flower: { yaw: -157, pitch: 30 },
+  cat: { yaw: -90, pitch: 14.5 },
+};
+
+/** その形の既定の撮影角度 */
+export function defaultCaptureAngle(shape: VesselShape): CaptureAngle {
+  return CAPTURE_ANGLE_BY_SHAPE[shape] ?? DEFAULT_CAPTURE_ANGLE;
+}
+
+/** 俯角の許容範囲 (デバッガーのスライダーと clamp に使う) */
+export const CAPTURE_PITCH_RANGE: [number, number] = [-15, 30];
+/** これを超える俯角は spec 上の失敗例 (約 24°) に近づく */
+export const CAPTURE_PITCH_WARN = 15;
+
+/** 俯角 (度) から、原点を見るカメラの位置を返す */
+export function captureCameraPosition(pitch: number): [number, number, number] {
+  const r = (pitch * Math.PI) / 180;
+  return [0, CAMERA_DISTANCE * Math.sin(r), CAMERA_DISTANCE * Math.cos(r)];
+}
+
+/** 深度画像と同じ構図で描きたいとき用 (疑似応答の絵・デバッガー) */
+export const DEPTH_CAMERA = { distance: CAMERA_DISTANCE, fov: CAMERA_FOV, zoom: DEPTH_ZOOM };
 
 const DEPTH_VERT = /* glsl */ `
 varying float vViewZ;
@@ -48,20 +92,36 @@ void main() {
 }
 `;
 
-/** 器のメッシュ一式 (回転体 + 付属パーツ) を material で組む。呼び出し側で dispose すること */
+/**
+ * 器のメッシュ一式 (回転体 + 付属パーツ) を material で組む。呼び出し側で dispose すること。
+ * yaw (度) を渡すと器を縦軸まわりに回して置く
+ */
 export function buildVesselGroup(
   shape: VesselShape,
   custom: CustomVessel | null,
   material: THREE.Material,
-  zoom: number
+  zoom: number,
+  yaw = 0
 ): THREE.Group {
   const spec = resolveVesselSpec(shape, custom);
-  const v = spec.profile.map(([x, y]) => new THREE.Vector2(x, y));
-  const points = spec.smooth ? new THREE.SplineCurve(v).getPoints(48) : v;
-
   const group = new THREE.Group();
   group.scale.setScalar(spec.scale * zoom);
   group.position.set(0, (-spec.height * spec.scale * zoom) / 2, 0);
+  group.rotation.y = (yaw * Math.PI) / 180;
+
+  // GLB の形: 読み込み済みのメッシュを使う (呼び出し側で preloadVesselModel を済ませておく)。
+  // 呼び出し側が dispose するのでキャッシュの複製を渡す
+  if (isModelShape(shape)) {
+    const geometry = getVesselModel(shape);
+    if (!geometry) {
+      throw new Error(`vessel model not loaded: ${shape} (call preloadVesselModel first)`);
+    }
+    group.add(new THREE.Mesh(geometry.clone(), material));
+    return group;
+  }
+
+  const v = spec.profile.map(([x, y]) => new THREE.Vector2(x, y));
+  const points = spec.smooth ? new THREE.SplineCurve(v).getPoints(48) : v;
 
   const add = (
     geometry: THREE.BufferGeometry,
@@ -96,6 +156,23 @@ export function buildVesselGroup(
   return group;
 }
 
+export type DepthRenderOptions = {
+  /** 器の大きさ。既定 DEPTH_ZOOM */
+  zoom?: number;
+  /** 撮る角度。既定 DEFAULT_CAPTURE_ANGLE */
+  angle?: CaptureAngle;
+  /** 一辺 (px)。API に送るのは DEPTH_SIZE 固定。デバッガーの覗き見用に小さく描ける */
+  size?: number;
+};
+
+/** 深度画像の検算 (depth_input_spec.md 1)。API 側の meta.depth.object_ratio / object_std に相当 */
+export type DepthStats = {
+  /** 器 (値 > 0) の画素が全体に占める割合 0-1。検証済みの範囲は 0.15〜0.45 */
+  objectRatio: number;
+  /** 器の中の値 (0-255) の標準偏差。40 以上が目安 */
+  objectStd: number;
+};
+
 /**
  * 器の深度画像を base64 PNG (data URL) で返す。
  * WebGL のコンテキストは描画後に必ず破棄する (長時間稼働対策)。
@@ -103,10 +180,29 @@ export function buildVesselGroup(
 export function renderVesselDepthPng(
   shape: VesselShape,
   custom: CustomVessel | null,
-  zoom = DEPTH_ZOOM
+  options: DepthRenderOptions = {}
 ): string {
+  return renderDepth(shape, custom, options, false).dataUrl;
+}
+
+/** 深度画像と検算値をまとめて返す (デバッガー用) */
+export function renderVesselDepthPreview(
+  shape: VesselShape,
+  custom: CustomVessel | null,
+  options: DepthRenderOptions = {}
+): { dataUrl: string; stats: DepthStats } {
+  const r = renderDepth(shape, custom, options, true);
+  return { dataUrl: r.dataUrl, stats: r.stats! };
+}
+
+function renderDepth(
+  shape: VesselShape,
+  custom: CustomVessel | null,
+  { zoom = DEPTH_ZOOM, angle = DEFAULT_CAPTURE_ANGLE, size = DEPTH_SIZE }: DepthRenderOptions,
+  withStats: boolean
+): { dataUrl: string; stats?: DepthStats } {
   const canvas = document.createElement("canvas");
-  canvas.width = canvas.height = DEPTH_SIZE;
+  canvas.width = canvas.height = size;
 
   const renderer = new THREE.WebGLRenderer({
     canvas,
@@ -115,7 +211,7 @@ export function renderVesselDepthPng(
     preserveDrawingBuffer: true,
   });
   renderer.setPixelRatio(1);
-  renderer.setSize(DEPTH_SIZE, DEPTH_SIZE, false);
+  renderer.setSize(size, size, false);
   renderer.setClearColor(0x000000, 1);
 
   const material = new THREE.ShaderMaterial({
@@ -130,11 +226,11 @@ export function renderVesselDepthPng(
   });
 
   const scene = new THREE.Scene();
-  const group = buildVesselGroup(shape, custom, material, zoom);
+  const group = buildVesselGroup(shape, custom, material, zoom, angle.yaw);
   scene.add(group);
 
   const camera = new THREE.PerspectiveCamera(CAMERA_FOV, 1, 0.1, 100);
-  camera.position.set(...CAMERA_POSITION);
+  camera.position.set(...captureCameraPosition(angle.pitch));
   camera.lookAt(0, 0, 0);
   camera.updateMatrixWorld();
 
@@ -159,7 +255,8 @@ export function renderVesselDepthPng(
     material.uniforms.uFar.value = far;
 
     renderer.render(scene, camera);
-    return canvas.toDataURL("image/png");
+    const stats = withStats ? readDepthStats(renderer, size) : undefined;
+    return { dataUrl: canvas.toDataURL("image/png"), stats };
   } finally {
     group.traverse((obj) => {
       if (obj instanceof THREE.Mesh) obj.geometry.dispose();
@@ -168,4 +265,27 @@ export function renderVesselDepthPng(
     renderer.dispose();
     renderer.forceContextLoss();
   }
+}
+
+/** 描いた直後のフレームバッファから検算値を読む (preserveDrawingBuffer 前提) */
+function readDepthStats(renderer: THREE.WebGLRenderer, size: number): DepthStats {
+  const gl = renderer.getContext();
+  const px = new Uint8Array(size * size * 4);
+  gl.readPixels(0, 0, size, size, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  let n = 0;
+  let sum = 0;
+  let sumSq = 0;
+  for (let i = 0; i < px.length; i += 4) {
+    const v = px[i]; // グレースケールなので R だけ見る
+    if (v === 0) continue;
+    n++;
+    sum += v;
+    sumSq += v * v;
+  }
+  if (n === 0) return { objectRatio: 0, objectStd: 0 };
+  const mean = sum / n;
+  return {
+    objectRatio: n / (size * size),
+    objectStd: Math.sqrt(Math.max(0, sumSq / n - mean * mean)),
+  };
 }

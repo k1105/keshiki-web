@@ -1,0 +1,11 @@
+{
+  "key": "cat",
+  "task_id": "61b981e7-59c0-4ef2-b916-7c3f6ed8215b",
+  "model": "P1-20260311",
+  "face_limit": 3000,
+  "texture": false,
+  "credits_consumed": 40,
+  "source_image": "public/shapes/white/cat.jpg",
+  "generated_with": "tripo-cli 0.5.1 (tripo make --model tripo-p1 -p face_limit=3000 -p texture=false -p pbr=false)",
+  "generated_at": "2026-10-27T11:45:11+00:00"
+}
