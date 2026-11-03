@@ -1,26 +1,14 @@
 import type { Metadata } from "next";
-import { DotGothic16, Noto_Sans_JP, Pixelify_Sans } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 
-// デザイン指定の LoRes 9 OT Narrow (Adobe Fonts) の代替。
-// 本番フォントに差し替えるときは globals.css の --font-pixel を書き換える
-const pixelifySans = Pixelify_Sans({
-  variable: "--font-pixelify",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-});
-
-const dotGothic = DotGothic16({
-  variable: "--font-dotgothic",
-  subsets: ["latin"],
-  weight: "400",
-});
-
-const notoSansJp = Noto_Sans_JP({
-  variable: "--font-noto-sans-jp",
-  subsets: ["latin"],
-  weight: ["300", "400", "500", "700"],
-});
+// フォントは Adobe Fonts (Typekit) のキット utl4rhu から読む。
+// - 英字: LoRes 9 OT Narrow ("lores-9-narrow")
+// - 日本語: 游ゴシック Pr6N ("yu-gothic-pr6n")
+// 日本語フォントはダイナミックサブセット (JS 埋め込み) でないと配信されないので、CSS の <link> ではなく
+// Adobe が発行する JS スニペットをそのまま使う。globals.css の --font-pixel / --font-text で参照する
+const ADOBE_FONTS_KIT_ID = "utl4rhu";
+const ADOBE_FONTS_LOADER = `(function(d){var config={kitId:'${ADOBE_FONTS_KIT_ID}',scriptTimeout:3000,async:true},h=d.documentElement,t=setTimeout(function(){h.className=h.className.replace(/\bwf-loading\b/g,"")+" wf-inactive";},config.scriptTimeout),tk=d.createElement("script"),f=false,s=d.getElementsByTagName("script")[0],a;h.className+=" wf-loading";tk.src='https://use.typekit.net/'+config.kitId+'.js';tk.async=true;tk.onload=tk.onreadystatechange=function(){a=this.readyState;if(f||a&&a!="complete"&&a!="loaded")return;f=true;clearTimeout(t);try{Typekit.load(config)}catch(e){}};s.parentNode.insertBefore(tk,s)})(document);`;
 
 export const metadata: Metadata = {
   title: "Glaiz",
@@ -33,11 +21,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="ja"
-      className={`${pixelifySans.variable} ${dotGothic.variable} ${notoSansJp.variable}`}
-    >
-      <body>{children}</body>
+    <html lang="ja">
+      <body>
+        <Script id="adobe-fonts" dangerouslySetInnerHTML={{ __html: ADOBE_FONTS_LOADER }} />
+        {children}
+      </body>
     </html>
   );
 }

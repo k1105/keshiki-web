@@ -88,7 +88,6 @@ const CLAY_ORDER: { key: ClayKey; dir: string }[] = [
 type Mode = "visual" | "style" | "mood";
 type ColorMode = "wheel" | "slider";
 type View = "title" | "main";
-type AppearanceSub = "color" | "surface" | "transparency" | "character";
 
 // ロゴはデザインのピクセル字形をそのままトレースしたもの（フォントに依存させない）
 const LOGO_ROWS = [
@@ -201,27 +200,12 @@ function InlineChoices<T extends string>({
   );
 }
 
-/** 見出しをクリックすると中身が開く小見出し。閉じているときは現在の値を添える */
-function SubHead({
-  label,
-  value,
-  open,
-  onToggle,
-  children,
-}: {
-  label: string;
-  value?: React.ReactNode;
-  open: boolean;
-  onToggle: () => void;
-  children: React.ReactNode;
-}) {
+/** 小見出しと中身。開閉はしない (常に開いている) */
+function SubHead({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className={`sub ${open ? "is-open" : ""}`}>
-      <button type="button" className="sub-h" onClick={onToggle}>
-        <span>{label}</span>
-        {!open && value != null && <span className="sub-val">{value}</span>}
-      </button>
-      {open && <div className="sub-body">{children}</div>}
+    <div className="sub is-static">
+      <div className="sub-h">{label}</div>
+      <div className="sub-body">{children}</div>
     </div>
   );
 }
@@ -247,7 +231,6 @@ export default function Home() {
 
   // Step 2: 3 方式のどれを開いているか。開くまでは見出しだけが並ぶ
   const [mode, setMode] = useState<Mode | null>(null);
-  const [appearanceSub, setAppearanceSub] = useState<AppearanceSub>("color");
   const [hyomen, setHyomen] = useState<Hyomen>("HyomenKotaku");
   const [yuseijoA, setYuseijoA] = useState<YuseijoA>("YuseijoAYusyokuTomei");
   const [yuseijoB, setYuseijoB] = useState<YuseijoB>("YuseijoBKinitsu");
@@ -598,18 +581,6 @@ export default function Home() {
                     <div className="subs">
                       <SubHead
                         label={t.color}
-                        value={
-                          glaze && (
-                            <span
-                              className="sub-swatch"
-                              style={{
-                                background: livePreviewHex ?? glaze.hex,
-                              }}
-                            />
-                          )
-                        }
-                        open={appearanceSub === "color"}
-                        onToggle={() => setAppearanceSub("color")}
                       >
                         <div className="subtabs">
                           <button
@@ -646,9 +617,6 @@ export default function Home() {
 
                       <SubHead
                         label={t.surface}
-                        value={t.hyomen[hyomen]}
-                        open={appearanceSub === "surface"}
-                        onToggle={() => setAppearanceSub("surface")}
                       >
                         <InlineChoices
                           options={HYOMEN_OPTIONS}
@@ -660,9 +628,6 @@ export default function Home() {
 
                       <SubHead
                         label={t.transparency}
-                        value={t.yuseijoA[yuseijoA]}
-                        open={appearanceSub === "transparency"}
-                        onToggle={() => setAppearanceSub("transparency")}
                       >
                         <InlineChoices
                           options={YUSEIJO_A_OPTIONS}
@@ -674,9 +639,6 @@ export default function Home() {
 
                       <SubHead
                         label={t.character}
-                        value={t.yuseijoB[yuseijoB]}
-                        open={appearanceSub === "character"}
-                        onToggle={() => setAppearanceSub("character")}
                       >
                         <InlineChoices
                           options={YUSEIJO_B_OPTIONS}

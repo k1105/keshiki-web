@@ -22,9 +22,12 @@
   --pink: #fc3f9a;
   --line: rgba(255, 255, 255, 0.55);
 
-  /* LoRes 9 OT Narrow (Adobe Fonts) の代替。本番フォントはここを差し替える */
-  --font-pixel: var(--font-pixelify), var(--font-dotgothic), monospace;
-  --font-text: var(--font-noto-sans-jp), "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Yu Gothic", sans-serif;
+  /* Adobe Fonts (app/layout.tsx で読み込み)。英字 LoRes 9 OT Narrow、日本語 游ゴシック Pr6N */
+  --font-latin: "lores-9-narrow", "yu-gothic-pr6n", sans-serif;
+  --font-jp: "yu-gothic-pr6n", "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Yu Gothic", sans-serif;
+  /* UI の書体。EN 表示は LoRes、JP 表示は游ゴシックに統一する (下の :lang(ja) で切り替え) */
+  --font-pixel: var(--font-latin);
+  --font-text: var(--font-jp);
 
   /* ピンクの十字カーソル */
   --cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 7 7' shape-rendering='crispEdges'%3E%3Cpath fill='%23fc3f9a' d='M2 0h3v2h2v3H5v2H2V5H0V2h2z'/%3E%3C/svg%3E") 14 14, crosshair;
@@ -146,9 +149,16 @@ button:focus-visible, textarea:focus-visible, input:focus-visible {
   shape-rendering: crispEdges;
 }
 
-/* 右ナビ */
+/* JP 表示: 英数字も含めて游ゴシックで統一し、LoRes との混植はしない。
+   英語のまま出す要素 (ロゴは SVG、右ナビは下で指定) だけ LoRes のまま */
+:root:lang(ja) {
+  --font-pixel: var(--font-jp);
+}
+
+/* 右ナビ (ABOUT / EN / JP / ARCHIVE / SHARE は JP 表示でも英語のまま) */
 .rnav-item {
   position: absolute;
+  font-family: var(--font-latin);
   right: calc(var(--px) * 122);
   font-size: calc(var(--px) * 21);
   line-height: calc(var(--px) * 24);
@@ -175,7 +185,6 @@ button.rnav-item:hover,
   z-index: 2;
 }
 .group { margin-bottom: calc(var(--px) * 72); }
-.col.is-accordion .group { margin-bottom: calc(var(--px) * 32); }
 .h {
   display: block;
   font-size: calc(var(--px) * 28);
@@ -242,6 +251,24 @@ button.h:hover,
 }
 .sub-h:hover,
 .sub.is-open > .sub-h { color: var(--pink); }
+/* 開閉しない小見出し (見た目の 色・表面・透明度・質感) は見出しを強調しない。
+   4 つが常に開くぶん縦に長くなるので、下端のナビ (top 920px) に被らないよう詰める */
+.sub.is-static > .sub-h {
+  color: inherit;
+  min-height: calc(var(--px) * 27);
+  line-height: calc(var(--px) * 27);
+}
+.sub.is-static > .sub-body { margin-bottom: calc(var(--px) * 2); }
+.sub.is-static .color-wheel-wrapper {
+  width: calc(var(--px) * 190);
+  height: calc(var(--px) * 190);
+  margin-top: calc(var(--px) * 6);
+}
+/* 英語表示で選択肢が 2 行に折れにくいよう、中央パネルの手前まで幅を使う */
+.sub.is-static .items.is-inline { width: calc(var(--px) * 420); }
+.sub.is-static .items.is-inline .item { line-height: calc(var(--px) * 22); }
+.col.is-accordion .subs { margin-top: calc(var(--px) * 6); }
+.col.is-accordion .group { margin-bottom: calc(var(--px) * 20); }
 .sub-val {
   overflow: hidden;
   min-width: 0;
