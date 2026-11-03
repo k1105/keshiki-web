@@ -1,10 +1,10 @@
 "use client";
 
-// 深度画像を撮る角度 (ヨー・俯角) を決めるためのデバッガー。URL に ?debug=capture で開く。
+// 深度画像を撮る角度 (ヨー・俯角) とズーム (器の大きさ) を決めるためのデバッガー。URL に ?debug=capture で開く。
 //
 // 左: 深度画像と同じカメラ (lib/depth.ts) で描いた器。ドラッグで回す (横 = ヨー、縦 = 俯角)
 // 右: その角度で実際に描いた深度画像 (縮小) と、depth_input_spec.md の検算値
-// ここで決めた角度は page.tsx の captureAngle になり、焼成時の renderVesselDepthPng に渡る
+// ここで決めた角度・ズームは page.tsx の captureAngle になり、焼成時の renderVesselDepthPng に渡る
 
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
@@ -13,10 +13,13 @@ import {
   buildVesselGroup,
   CAPTURE_PITCH_RANGE,
   CAPTURE_PITCH_WARN,
+  CAPTURE_ZOOM_RANGE,
   captureCameraPosition,
+  captureZoom,
   defaultCaptureAngle,
   DEPTH_CAMERA,
   DEPTH_SIZE,
+  DEPTH_ZOOM,
   renderVesselDepthPng,
   renderVesselDepthPreview,
   type CaptureAngle,
@@ -46,6 +49,11 @@ function clampPitch(p: number) {
   return Math.min(CAPTURE_PITCH_RANGE[1], Math.max(CAPTURE_PITCH_RANGE[0], p));
 }
 
+function clampZoom(z: number) {
+  if (!Number.isFinite(z)) return DEPTH_ZOOM;
+  return Math.min(CAPTURE_ZOOM_RANGE[1], Math.max(CAPTURE_ZOOM_RANGE[0], z));
+}
+
 /** -180 < yaw <= 180 に畳む */
 function wrapYaw(y: number) {
   const w = ((((y + 180) % 360) + 360) % 360) - 180;
@@ -54,6 +62,10 @@ function wrapYaw(y: number) {
 
 function round1(v: number) {
   return Math.round(v * 10) / 10;
+}
+
+function round2(v: number) {
+  return Math.round(v * 100) / 100;
 }
 
 /** 俯角に合わせてカメラを置く。Canvas の既定カメラを直接動かす */
@@ -72,10 +84,12 @@ function CaptureVessel({
   shape,
   custom,
   yaw,
+  zoom,
 }: {
   shape: VesselShape;
   custom: CustomVessel | null;
   yaw: number;
+  zoom: number;
 }) {
   const [group, setGroup] = useState<THREE.Group | null>(null);
 
@@ -92,7 +106,7 @@ function CaptureVessel({
           metalness: 0.05,
           side: THREE.DoubleSide,
         });
-        built = buildVesselGroup(shape, custom, material, DEPTH_CAMERA.zoom);
+        built = buildVesselGroup(shape, custom, material, zoom);
         setGroup(built);
       })
       .catch((e) => console.error("capture debugger: vessel build failed", e));
@@ -104,7 +118,7 @@ function CaptureVessel({
       });
       material?.dispose();
     };
-  }, [shape, custom]);
+  }, [shape, custom, zoom]);
 
   useEffect(() => {
     if (group) group.rotation.y = (yaw * Math.PI) / 180;
@@ -149,6 +163,7 @@ export default function CaptureDebugger({
     onChange({
       yaw: wrapYaw(next.yaw ?? cur.yaw),
       pitch: clampPitch(next.pitch ?? cur.pitch),
+      zoom: clampZoom(next.zoom ?? captureZoom(cur)),
     });
   };
 
@@ -174,12 +189,16 @@ export default function CaptureDebugger({
     const url = renderVesselDepthPng(shape, custom, { angle });
     const a = document.createElement("a");
     a.href = url;
-    a.download = `depth_${shape}_yaw${round1(angle.yaw)}_pitch${round1(angle.pitch)}.png`;
+    a.download = `depth_${shape}_yaw${round1(angle.yaw)}_pitch${round1(angle.pitch)}_zoom${round2(zoom)}.png`;
     a.click();
   };
 
   const copyJson = async () => {
-    const json = JSON.stringify({ yaw: round1(angle.yaw), pitch: round1(angle.pitch) });
+    const json = JSON.stringify({
+      yaw: round1(angle.yaw),
+      pitch: round1(angle.pitch),
+      zoom: round2(zoom),
+    });
     try {
       await navigator.clipboard.writeText(json);
       setCopied(true);
@@ -194,16 +213,17 @@ export default function CaptureDebugger({
     stats && stats.objectRatio >= RATIO_RANGE[0] && stats.objectRatio <= RATIO_RANGE[1];
   const stdOk = stats && stats.objectStd >= STD_MIN;
   const camPos = captureCameraPosition(angle.pitch);
+  const zoom = captureZoom(angle);
   // 器の底の高さ (buildVesselGroup と同じ置き方)。床の格子をここに置く
   const spec = resolveVesselSpec(shape, custom);
-  const floorY = (-spec.height * spec.scale * DEPTH_CAMERA.zoom) / 2;
+  const floorY = (-spec.height * spec.scale * zoom) / 2;
 
   return (
     <div className="capdbg" role="dialog" aria-label="撮影角度デバッガー">
       <div className="capdbg-head">
         <span>撮影角度デバッガー</span>
         <span className="capdbg-dim">
-          {shape} / 1024² / fov {DEPTH_CAMERA.fov}° / zoom {DEPTH_CAMERA.zoom}
+          {shape} / 1024² / fov {DEPTH_CAMERA.fov}° / zoom {round2(zoom)}
         </span>
         <button type="button" className="capdbg-close" onClick={onClose} aria-label="閉じる">
           ×
@@ -229,7 +249,7 @@ export default function CaptureDebugger({
               <directionalLight position={[3, 5, 2]} intensity={2.2} />
               <directionalLight position={[-3, 2, -3]} intensity={0.6} />
               <CaptureCamera pitch={angle.pitch} />
-              <CaptureVessel shape={shape} custom={custom} yaw={angle.yaw} />
+              <CaptureVessel shape={shape} custom={custom} yaw={angle.yaw} zoom={zoom} />
               {/* 床の格子。俯角の見当をつけるためだけに置く (深度には描かない) */}
               <gridHelper args={[6, 12, "#6a5d80", "#443a55"]} position={[0, floorY, 0]} />
             </Canvas>
@@ -289,6 +309,25 @@ export default function CaptureDebugger({
         />
         <span className="capdbg-unit">°</span>
       </label>
+      <label className="capdbg-row">
+        <span className="capdbg-lbl">ズーム</span>
+        <input
+          type="range"
+          min={CAPTURE_ZOOM_RANGE[0]}
+          max={CAPTURE_ZOOM_RANGE[1]}
+          step={0.01}
+          value={round2(zoom)}
+          onChange={(e) => set({ zoom: Number(e.target.value) })}
+        />
+        <input
+          type="number"
+          className="capdbg-num"
+          step={0.01}
+          value={round2(zoom)}
+          onChange={(e) => set({ zoom: Number(e.target.value) })}
+        />
+        <span className="capdbg-unit">×</span>
+      </label>
       {angle.pitch > CAPTURE_PITCH_WARN && (
         <div className="capdbg-warn">
           ⚠ 俯角 {CAPTURE_PITCH_WARN}° 超。spec では約 24° の見下ろしで失敗 (検証済みは 0° と約 13°)
@@ -317,7 +356,7 @@ export default function CaptureDebugger({
           PNG ({DEPTH_SIZE}²) を保存
         </button>
         <button type="button" onClick={copyJson}>
-          {copied ? "コピーした" : "角度を JSON でコピー"}
+          {copied ? "コピーした" : "角度・ズームを JSON でコピー"}
         </button>
       </div>
     </div>

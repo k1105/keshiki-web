@@ -3,16 +3,21 @@
 // v5 / 3D は知らないキーをエラーにする (ValueError → FAILED) ので、本番に反映されるまで
 // preview / detail は送れない。反映されたらここの既定値を true にする (岸さんから連絡をもらう)。
 //
+// 3D モデル生成 (v5 の絵 → GLB) は一時的に無効化中 (model3d の既定値 false)。戻すときは DEFAULT_MODEL_3D を true にする。
+//
 // 切り替え方 (優先順: URL クエリ > 環境変数 > 既定値):
-// - URL: ?mock=1 (疑似応答)、?mock=1&speed=4 (4 倍速)、?preview=1、?detail=1
+// - URL: ?mock=1 (疑似応答)、?mock=1&speed=4 (4 倍速)、?preview=1、?detail=1、?model3d=1
 // - 環境変数 (.env.local、ブラウザに埋め込むので NEXT_PUBLIC_ が必要。変えたら dev サーバー再起動):
 //   NEXT_PUBLIC_FIRING_MOCK=1 / NEXT_PUBLIC_FIRING_MOCK_SPEED=4 / NEXT_PUBLIC_V5_PREVIEW=1 / NEXT_PUBLIC_3D_DETAIL=1
+//   / NEXT_PUBLIC_3D_MODEL=1
 
 export type FiringCapabilities = {
   /** v5 に preview (生成途中の絵) を送る。本番未反映 (2026-10-19 時点) */
   preview: boolean;
   /** 3D に detail (途中の形) を送る。本番未反映 (2026-10-19 時点) */
   detail: boolean;
+  /** v5 の絵から 3D モデル (GLB) を生成する。false なら v5 の絵で焼き上がりにする (一時無効化中) */
+  model3d: boolean;
   /** API を叩かず疑似応答で焼成フローを動かす (演出の確認用) */
   mock: boolean;
   /** 疑似応答の進む速さ (1 = 仕様書の実測どおり、4 = 4 倍速) */
@@ -22,6 +27,8 @@ export type FiringCapabilities = {
 // 本番反映前の既定値。反映されたら true に変える
 const DEFAULT_PREVIEW = false;
 const DEFAULT_DETAIL = false;
+// 3D モデル生成の一時無効化 (2026-11-04)。prod / dev とも止める。戻すときは true
+const DEFAULT_MODEL_3D = false;
 
 function flag(query: URLSearchParams | null, key: string, env: string | undefined, fallback: boolean): boolean {
   const q = query?.get(key);
@@ -46,6 +53,7 @@ export function firingCapabilities(): FiringCapabilities {
   return {
     preview: flag(query, "preview", process.env.NEXT_PUBLIC_V5_PREVIEW, DEFAULT_PREVIEW),
     detail: flag(query, "detail", process.env.NEXT_PUBLIC_3D_DETAIL, DEFAULT_DETAIL),
+    model3d: flag(query, "model3d", process.env.NEXT_PUBLIC_3D_MODEL, DEFAULT_MODEL_3D),
     mock: flag(query, "mock", process.env.NEXT_PUBLIC_FIRING_MOCK, false),
     mockSpeed: number(query, "speed", process.env.NEXT_PUBLIC_FIRING_MOCK_SPEED, 1),
   };

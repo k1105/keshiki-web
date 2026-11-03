@@ -1,11 +1,10 @@
 "use client";
 
 // Step-2B「釉薬から選ぶ」のモーダル。
-// 左: 気になる釉薬を選ぶ。今の選択と組み合わせたデータが無いものは薄く見せるが、選べなくはしない
-//     (途中で通過する組み合わせにデータが無くても先に進めるように)。
-// 右: 現在の素地・焼成雰囲気で、選んだ釉薬を含む実在の組み合わせを候補として並べる。
+// 左: 気になる釉薬を選ぶ。今の選択と組み合わせたデータが無いものは薄く見せて選べなくする。
+// 右: 現在の素地・焼成雰囲気で、選んだ釉薬を含む実在の組み合わせを候補として並べる (未選択のときは非表示)。
 // 候補を 1 つ選んで「決定」すると、その組み合わせが確定版 (glazeCombo) になる。
-// 選択の途中でデータの無い組み合わせを通過しても構わないし、確定版は必ず実在の組み合わせになる。
+// 確定版は必ず実在の組み合わせになる。
 
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -69,7 +68,7 @@ export default function GlazePicker({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  // 今の選択と同じ行に載っているコード。無いものは薄く見せる (索引が読めるまでは全部通常表示)
+  // 今の選択と同じ行に載っているコード。無いものは薄く見せて選べなくする (索引が読めるまでは全部通常表示)
   const available = useMemo(
     () => (index ? availableGlazeCodes(index, conditions, picks) : null),
     [index, conditions, picks]
@@ -88,13 +87,11 @@ export default function GlazePicker({
 
   const hint = !index
     ? t.glazeLoading
-    : picks.length === 0
-      ? t.glazeCandidatesAll
-      : shown.length === 0
-        ? t.glazeCandidatesEmpty
-        : exact
-          ? null
-          : t.glazeCandidatesNear;
+    : shown.length === 0
+      ? t.glazeCandidatesEmpty
+      : exact
+        ? null
+        : t.glazeCandidatesNear;
 
   const draftKey = draft ? comboKey(draft) : null;
   const pickSet = new Set(picks);
@@ -146,6 +143,7 @@ export default function GlazePicker({
                               key={s.code}
                               type="button"
                               className={`item ${picked ? "active" : ""} ${dim ? "is-dim" : ""}`}
+                              disabled={dim}
                               onClick={() => onTogglePick(s.code)}
                             >
                               -{lang === "en" ? s.en : s.ja}
@@ -160,41 +158,44 @@ export default function GlazePicker({
             })}
           </div>
 
-          <div className="glaze-cands">
-            <div className="glaze-cands-title">{t.glazeCandidates}</div>
-            {hint && <div className="sub-hint">{hint}</div>}
-            <div className="glaze-cand-list">
-              {visible.map((c) => {
-                const key = comboKey(c.codes);
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    className={`glaze-cand ${draftKey === key ? "active" : ""}`}
-                    onClick={() => setDraft(c.codes)}
-                    onDoubleClick={() => onConfirm(c.codes)}
-                  >
-                    <span
-                      className={`glaze-cand-swatch ${c.hex ? "" : "is-none"}`}
-                      style={c.hex ? { background: c.hex } : undefined}
-                    />
-                    <span className="glaze-cand-names">
-                      {c.codes.map((code, i) => (
-                        <span key={code}>
-                          {i > 0 && (lang === "en" ? ", " : "、")}
-                          <span className={pickSet.has(code) ? "is-pick" : ""}>
-                            {glazeName(code, lang)}
+          {/* 釉薬を 1 つも選んでいないときは候補を出さない */}
+          {picks.length > 0 && (
+            <div className="glaze-cands">
+              <div className="glaze-cands-title">{t.glazeCandidates}</div>
+              {hint && <div className="sub-hint">{hint}</div>}
+              <div className="glaze-cand-list">
+                {visible.map((c) => {
+                  const key = comboKey(c.codes);
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      className={`glaze-cand ${draftKey === key ? "active" : ""}`}
+                      onClick={() => setDraft(c.codes)}
+                      onDoubleClick={() => onConfirm(c.codes)}
+                    >
+                      <span
+                        className={`glaze-cand-swatch ${c.hex ? "" : "is-none"}`}
+                        style={c.hex ? { background: c.hex } : undefined}
+                      />
+                      <span className="glaze-cand-names">
+                        {c.codes.map((code, i) => (
+                          <span key={code}>
+                            {i > 0 && (lang === "en" ? ", " : "、")}
+                            <span className={pickSet.has(code) ? "is-pick" : ""}>
+                              {glazeName(code, lang)}
+                            </span>
                           </span>
-                        </span>
-                      ))}
-                    </span>
-                    <span className="glaze-cand-count">{t.glazeCount(c.count)}</span>
-                  </button>
-                );
-              })}
+                        ))}
+                      </span>
+                      <span className="glaze-cand-count">{t.glazeCount(c.count)}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              {hidden > 0 && <div className="sub-hint">{t.glazeMore(hidden)}</div>}
             </div>
-            {hidden > 0 && <div className="sub-hint">{t.glazeMore(hidden)}</div>}
-          </div>
+          )}
         </div>
 
         <div className="glaze-modal-foot">

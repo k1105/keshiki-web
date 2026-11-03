@@ -6,6 +6,7 @@
 // - v5 完了: images[0].url をそのまま 3D に渡す (切り抜かない)
 // - 3D の途中経過: stage ごとに cutout / points / faces を保持する
 // - 3D 完了: glb (と detail があれば色のない形状の glb)
+// - caps.model3d が false のときは 3D を呼ばず、v5 の絵が出た時点で done にする (glb は null のまま)
 // 画面の演出 (温度カウンター・粒の描画など) はこの進捗 (FiringProgress) を見て描く。ここでは描かない。
 
 import type { FiringCapabilities } from "./firing-capabilities";
@@ -275,6 +276,11 @@ export async function runFiring(
     }
 
     // ---- 3D: 器の画像 → GLB ----
+    // 一時無効化中 (lib/firing-capabilities.ts model3d)。v5 の絵だけで焼き上がりにする
+    if (!opts.caps.model3d) {
+      update({ stage: "done" });
+      return p;
+    }
     // v5 の画像 (背景つき) をそのまま渡す。深度で切り抜いた透過画像は渡さない
     const input3d = buildGenerateInput3D(output.images[0].url, {
       detail: opts.caps.detail,

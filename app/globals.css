@@ -216,9 +216,9 @@ button.h:hover,
 .item:hover,
 .item.active { color: var(--pink); }
 /* 現在の選択との組み合わせがデータに無い釉薬 */
-.item:disabled { opacity: 0.3; color: inherit; }
+.item:disabled { opacity: 0.3; color: inherit; cursor: default; }
 .item.is-dim { opacity: 0.3; }
-.item.is-dim:hover { opacity: 1; }
+.item.is-dim:not(:disabled):hover { opacity: 1; }
 .items.is-inline {
   display: flex;
   flex-wrap: wrap;

@@ -19,9 +19,12 @@ import {
 export const DEPTH_SIZE = 1024;
 // 器のいちばん奥の明るさ (0-1)。背景 0 と区別できるよう底上げする
 const DEPTH_FAR_LEVEL = 0.25;
-// 器の大きさ。1 だと 1024² の枠いっぱいになるので、空間 (卓・壁) が入る余白をとる
-// (試験用サンプルの object_ratio は 0.2 前後)
-const DEPTH_ZOOM = 0.62;
+// 器の大きさ (既定、全形状共通)。1 で 1024² の枠いっぱい。2026-11-04 に 0.62 → 0.97 に変更
+// (試験用サンプルの object_ratio は 0.2 前後だったが、器を大きく写す方針にした)。
+// CaptureAngle.zoom で形ごと・デバッガーから上書きできる
+export const DEPTH_ZOOM = 0.97;
+/** ズームの許容範囲 (デバッガーのスライダーと clamp に使う) */
+export const CAPTURE_ZOOM_RANGE: [number, number] = [0.3, 1.2];
 
 // VesselCanvas と同じカメラ (距離・画角) で描く。
 // 従来の固定位置 [0, 0.7, 4.6] を「距離 + 俯角」に分解したもの (既定の俯角 ≒ 8.65°)
@@ -33,8 +36,9 @@ const CAMERA_FOV = 32;
  * - yaw: 器を縦軸まわりに回す角度 (正で上から見て反時計回り)。回転体では見え方は変わらない
  * - pitch: 俯角。0 で真横、正でカメラが上から見下ろす。
  *   depth_input_spec.md: 検証済みは 0° と約 13°、約 24° は失敗 (床が輪になる)
+ * - zoom: 器の大きさ (枠に対する倍率)。省略時は DEPTH_ZOOM
  */
-export type CaptureAngle = { yaw: number; pitch: number };
+export type CaptureAngle = { yaw: number; pitch: number; zoom?: number };
 export const DEFAULT_CAPTURE_ANGLE: CaptureAngle = {
   yaw: 0,
   pitch: (Math.atan2(0.7, 4.6) * 180) / Math.PI,
@@ -55,6 +59,11 @@ const CAPTURE_ANGLE_BY_SHAPE: Partial<Record<VesselShape, CaptureAngle>> = {
 /** その形の既定の撮影角度 */
 export function defaultCaptureAngle(shape: VesselShape): CaptureAngle {
   return CAPTURE_ANGLE_BY_SHAPE[shape] ?? DEFAULT_CAPTURE_ANGLE;
+}
+
+/** 撮影設定のズーム (省略時は DEPTH_ZOOM) */
+export function captureZoom(angle: CaptureAngle): number {
+  return angle.zoom ?? DEPTH_ZOOM;
 }
 
 /** 俯角の許容範囲 (デバッガーのスライダーと clamp に使う) */
@@ -157,10 +166,10 @@ export function buildVesselGroup(
 }
 
 export type DepthRenderOptions = {
-  /** 器の大きさ。既定 DEPTH_ZOOM */
-  zoom?: number;
   /** 撮る角度。既定 DEFAULT_CAPTURE_ANGLE */
   angle?: CaptureAngle;
+  /** 器の大きさ。既定は angle.zoom、無ければ DEPTH_ZOOM */
+  zoom?: number;
   /** 一辺 (px)。API に送るのは DEPTH_SIZE 固定。デバッガーの覗き見用に小さく描ける */
   size?: number;
 };
@@ -198,7 +207,7 @@ export function renderVesselDepthPreview(
 function renderDepth(
   shape: VesselShape,
   custom: CustomVessel | null,
-  { zoom = DEPTH_ZOOM, angle = DEFAULT_CAPTURE_ANGLE, size = DEPTH_SIZE }: DepthRenderOptions,
+  { angle = DEFAULT_CAPTURE_ANGLE, zoom = captureZoom(angle), size = DEPTH_SIZE }: DepthRenderOptions,
   withStats: boolean
 ): { dataUrl: string; stats?: DepthStats } {
   const canvas = document.createElement("canvas");

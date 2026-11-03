@@ -17,6 +17,7 @@ import { MeshSurfaceSampler } from "three/examples/jsm/math/MeshSurfaceSampler.j
 import {
   buildVesselGroup,
   captureCameraPosition,
+  captureZoom,
   DEFAULT_CAPTURE_ANGLE,
   DEPTH_CAMERA,
   type CaptureAngle,
@@ -326,7 +327,7 @@ function renderVesselPhoto(
   const material = new THREE.MeshStandardMaterial({ color, roughness: 0.35, metalness: 0.05 });
   const scene = new THREE.Scene();
   const angle = vessel.angle ?? DEFAULT_CAPTURE_ANGLE;
-  const group = buildVesselGroup(vessel.shape, vessel.custom, material, DEPTH_CAMERA.zoom, angle.yaw);
+  const group = buildVesselGroup(vessel.shape, vessel.custom, material, captureZoom(angle), angle.yaw);
   scene.add(group);
   scene.add(new THREE.AmbientLight(0xffffff, 0.9));
   const key = new THREE.DirectionalLight(0xffffff, 2.2);
