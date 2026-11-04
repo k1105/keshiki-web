@@ -112,3 +112,33 @@ export async function textSearch(
     message: typeof output?.message === "string" ? output.message : undefined,
   } as GenerateError;
 }
+
+/** 疑似応答 (?mock=1)。本番 endpoint に text_search が入るまでの演出確認用。温まった worker と同じ 1.5 秒で返す */
+export async function mockTextSearch(input: TextSearchInput, speed = 1): Promise<TextSearchOutput> {
+  await new Promise((r) => setTimeout(r, 1500 / speed));
+  return {
+    text: input.text,
+    rewrite: { description: "光沢のある深い緑色の釉", color: "#2f6d5f" },
+    style_filter: [],
+    relaxed: [],
+    results: [
+      {
+        recipe_id: "mock-text-search",
+        score: 0.88,
+        appearance_ja: "つやのある深い緑色の釉",
+        appearance_en: "Glossy deep green glaze",
+        soji: input.filters?.soji ?? "SojiToki",
+        shosei: input.filters?.shosei ?? "ShouseiSanka",
+        temp: 1240,
+        hyomen: "HyomenKotaku",
+        yuseijo_a: "YuseijoAYusyokuTomei",
+        yuseijo_b: "YuseijoBKinitsu",
+        glaze_types: [
+          { code: "A01", ja: "長石釉", en: "Feldspathic glaze" },
+          { code: "C02", ja: "織部釉", en: "Oribe glaze" },
+        ],
+        color: "#2f6d5f",
+      },
+    ],
+  };
+}

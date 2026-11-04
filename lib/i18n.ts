@@ -11,6 +11,7 @@ const en = {
 
   selectBase: "Select the Base",
   form: "FORM",
+  formHint: "Choose the form you want to make.",
   clayBody: "CLAY BODY",
   atmosphere: "ATMOSPHERE",
   next: "NEXT",
@@ -42,7 +43,7 @@ const en = {
 
   selectLook: "Select the Look",
   appearance: "APPEARANCE",
-  glazeHeading: "GLAZE",
+  glazeHeading: "FROM A GLAZE",
   inspiration: "INSPIRATION",
 
   color: "COLOR",
@@ -86,7 +87,11 @@ const en = {
   glazeConfirm: "CONFIRM",
   glazeClose: "CLOSE",
   glazeLoading: "Loading the database...",
-  moodPlaceholder: "e.g. A forest after rain, quiet and a little damp...",
+  moodPlaceholder:
+    "Describe the glaze you have in mind. e.g. A forest after rain, quiet and a little damp.",
+  moodConfirm: "CONFIRM",
+  moodSearching: "Looking for a matching glaze...",
+  moodFailed: "Could not find a glaze. Please try again.",
 
   firing: "FIRING...",
   phases: {
@@ -127,7 +132,7 @@ const en = {
   ],
   aboutBody: [
     "Ceramics is a timeless technology that transforms clay, glaze, and fire into unexpected beauty through chemical reactions.",
-    "GLAIZ is a project that brings together a vast archive of glaze data from Japan's pottery industry and cutting-edge AI technology. By visualizing the world of glazes, traditionally shaped by artisans' experience and intuition, we aim to create another way to experience ceramics—one that invites anyone to freely explore new creative possibilities.",
+    "Glazescape Project brings together a vast archive of glaze data from Japan's pottery industry and cutting-edge AI technology. By visualizing the world of glazes, traditionally shaped by artisans' experience and intuition, we aim to create another way to experience ceramics—one that invites anyone to freely explore new creative possibilities.",
     "We hope this experiment will open up new possibilities for the future of ceramic culture and spark unexpected new reactions.",
   ],
 };
@@ -142,11 +147,13 @@ const ja: Strings = {
 
   selectBase: "ベースを選ぶ",
   form: "かたち",
+  formHint: "生成したいかたちを選んでください",
   clayBody: "素地",
   atmosphere: "焼成雰囲気",
-  next: "次へ",
-  back: "戻る",
-  fire: "焼成する",
+  // ボタン類は日本語 UI でも英語表記
+  next: "NEXT",
+  back: "BACK",
+  fire: "FIRE",
 
   shapes: {
     vase: "壺",
@@ -171,9 +178,9 @@ const ja: Strings = {
   drawHint: "底から口へ向かって、器の輪郭を一筆で描いてください。",
   drawTooShort: "線が短すぎます。もう少し長く描いてください",
 
-  selectLook: "見た目から選ぶ",
-  appearance: "見た目",
-  glazeHeading: "釉薬",
+  selectLook: "見た目を選ぶ",
+  appearance: "外観を選ぶ",
+  glazeHeading: "釉薬から選ぶ",
   inspiration: "感覚でつくる",
 
   color: "色",
@@ -217,9 +224,13 @@ const ja: Strings = {
   glazeConfirm: "決定",
   glazeClose: "閉じる",
   glazeLoading: "データベースを読み込み中...",
-  moodPlaceholder: "例：雨上がりの森みたいな、静かで少し湿った感じ…",
+  moodPlaceholder:
+    "つくりたい釉薬のイメージを書いてください。ex. 雨上がりの森みたいな、静かで少し湿った感じ。",
+  moodConfirm: "CONFIRM",
+  moodSearching: "近い釉薬を探しています…",
+  moodFailed: "釉薬が見つかりませんでした。もう一度お試しください",
 
-  firing: "焼成中...",
+  firing: "FIRING...",
   phases: {
     submitting: "焼成ジョブを投入中…",
     queued: "窯の順番待ち… 窯が冷えていると 2〜3 分かかります",
@@ -259,7 +270,7 @@ const ja: Strings = {
   ],
   aboutBody: [
     "やきものは、土と釉薬と炎が化学反応によって思いがけない美しさへと変わる、時代を超えた技術です。",
-    "GLAIZは、日本の窯業界に蓄積された膨大な釉薬データと、最先端のAI技術をかけあわせるプロジェクトです。これまで職人の経験と勘によって形づくられてきた釉薬の世界を可視化することで、誰もが自由に新しい創造の可能性を探れる、やきもののもうひとつの楽しみ方をつくることを目指しています。",
+    "Glazescape Projectは、日本の窯業界に蓄積された膨大な釉薬データと、最先端のAI技術をかけあわせる取り組みです。これまで職人の経験と勘によって形づくられてきた釉薬の世界を可視化することで、誰もが自由に新しい創造の可能性を探れる、やきもののもうひとつの楽しみ方をつくることを目指しています。",
     "この試みが、陶磁文化の未来に新たな可能性をひらき、思いがけない新しい反応を生み出すことを願っています。",
   ],
 };

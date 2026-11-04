@@ -77,14 +77,88 @@ function TempCounter({ target, startedAt }: { target: number | null; startedAt: 
       const f = Math.min(1, (Date.now() - startedAt) / TEMP_RISE_MS);
       const eased = 1 - Math.pow(1 - f, 2.2);
       if (ref.current) ref.current.textContent = String(Math.round(goal * eased));
+      // 背景は温度と同じ進みで黒 → 赤になる (globals.css .backdrop-firing::after)
+      document.documentElement.style.setProperty("--heat", eased.toFixed(3));
       if (f < 1) raf = requestAnimationFrame(tick);
     };
     tick();
-    return () => cancelAnimationFrame(raf);
+    return () => {
+      cancelAnimationFrame(raf);
+      document.documentElement.style.removeProperty("--heat");
+    };
   }, [target, startedAt]);
   return (
     <div className="firing-temp">
       <span ref={ref}>0</span>°C
+    </div>
+  );
+}
+
+// 進捗: 工程が 1 つ終わるごとに 1 コマ埋まる (時間では伸ばさない)。
+// 各コマは「ここまで届いた」の判定。先頭から連続して真のものまでを完了とみなす
+const STAGE_ORDER: FiringStage[] = [
+  "submitting",
+  "queued",
+  "running",
+  "submitting3d",
+  "queued3d",
+  "running3d",
+  "done",
+];
+const stageAtLeast = (p: FiringProgress, s: FiringStage) =>
+  STAGE_ORDER.indexOf(p.stage) >= STAGE_ORDER.indexOf(s);
+const POINTS_ORDER = ["coarse_shape", "fine_shape", "color_points"] as const;
+const pointsAtLeast = (p: FiringProgress, s: (typeof POINTS_ORDER)[number]) =>
+  p.glb !== null ||
+  (p.points !== null && POINTS_ORDER.indexOf(p.points.stage) >= POINTS_ORDER.indexOf(s));
+
+type Checkpoint = (p: FiringProgress) => boolean;
+// v5 (絵): 投入 → 窯が動いた → レシピ決定 → 絵ができた
+const CHECKPOINTS_2D: Checkpoint[] = [
+  (p) => stageAtLeast(p, "queued"),
+  (p) => stageAtLeast(p, "running"),
+  (p) => p.recipe !== null,
+  (p) => p.image !== null || p.output !== null,
+];
+// 3D: 投入 → 動いた → 切り抜き → 粗い形 → 細かい形 → 色付け → GLB
+const CHECKPOINTS_3D: Checkpoint[] = [
+  ...CHECKPOINTS_2D,
+  (p) => stageAtLeast(p, "queued3d"),
+  (p) => stageAtLeast(p, "running3d"),
+  (p) => p.cutout !== null || p.points !== null || p.glb !== null,
+  (p) => pointsAtLeast(p, "coarse_shape"),
+  (p) => pointsAtLeast(p, "fine_shape"),
+  (p) => pointsAtLeast(p, "color_points"),
+  (p) => p.glb !== null,
+];
+
+function FiringSteps({
+  progress,
+  model3d,
+  title,
+}: {
+  progress: FiringProgress;
+  model3d: boolean;
+  title: string;
+}) {
+  const checkpoints = model3d ? CHECKPOINTS_3D : CHECKPOINTS_2D;
+  let done = 0;
+  while (done < checkpoints.length && checkpoints[done](progress)) done++;
+  return (
+    <div
+      className="firing-steps"
+      role="progressbar"
+      aria-label={title}
+      aria-valuemin={0}
+      aria-valuemax={checkpoints.length}
+      aria-valuenow={done}
+    >
+      {checkpoints.map((_, i) => (
+        <span
+          key={i}
+          className={`firing-step ${i < done ? "is-done" : i === done ? "is-now" : ""}`}
+        />
+      ))}
     </div>
   );
 }
@@ -294,6 +368,9 @@ export default function FiringPanel({
           console.error("glaze index load failed", e);
         }
         if (controller.signal.aborted) return;
+      } else if (startUi.mode === "mood" && startUi.moodRecipeId) {
+        // 感覚でつくる: 自由探索で確定したテストピースの釉で焼く
+        recipeId = startUi.moodRecipeId;
       }
 
       const result = await runFiring(
@@ -346,12 +423,8 @@ export default function FiringPanel({
 
   if (!active) return null;
 
-  // 焼成中は全画面の焼成演出になり、進行状況と温度、生成途中の絵を出す
+  // 焼成中は全画面の焼成演出になり、温度と進捗バー、生成途中の絵を出す
   if (phase !== "done" && phase !== "failed" && phase !== "config") {
-    const stage3d =
-      phase === "running3d" && progress.stage3d
-        ? t.stages3d[progress.stage3d as keyof typeof t.stages3d] ?? progress.stage3d
-        : null;
     // 粒が届いたら粒 (VesselCanvas) を見せるので、絵は粒が届くまで
     const frame = progress.points ? null : progress.preview?.image ?? progress.image ?? null;
     const frameKey = progress.preview ? `step:${progress.preview.step}` : "final";
@@ -361,8 +434,7 @@ export default function FiringPanel({
         <div className="firing-label" role="status">
           <div className="firing-title">{t.firing}</div>
           <TempCounter target={recipe?.temp ?? null} startedAt={progress.startedAt} />
-          <div className="firing-phase">{t.phases[phase]}</div>
-          {stage3d && <div className="firing-phase">{stage3d}</div>}
+          <FiringSteps progress={progress} model3d={caps.model3d} title={t.phases[phase]} />
         </div>
       </>
     );

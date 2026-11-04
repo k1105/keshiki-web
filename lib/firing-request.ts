@@ -36,6 +36,8 @@ export type FiringUiState = {
   // 釉薬から選ぶ: 釉名称コード (A01..G12、複数可)
   glazeCodes: string[];
   mood: string;
+  /** 感覚でつくる: 自由探索 (text_search) で確定した実在レシピ。これで焼く */
+  moodRecipeId?: string | null;
   clay: string; // 磁器 / 陶器（白土） / 陶器（赤土）
   atmosphere: string; // 酸化焼成 / 還元焼成
   temp: number; // 1100-1300

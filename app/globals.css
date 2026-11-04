@@ -7,7 +7,7 @@
     linear-gradient(180deg, #f3c9f5 0%, #f6cbdc 50%, #f6cac5 100%);
 }
 /*
- * Glaiz UI (docs/1002_Glaiz_web.pdf)
+ * Glazescape Project UI (docs/1002_Glaiz_web.pdf)
  * デザインは 1920x1080 のアートボード。画面に収まる 16:9 のステージを中央に置き、
  * 寸法はすべて --px (アートボード上の 1px) の倍数で指定する。
  */
@@ -17,6 +17,13 @@
   --u: calc(var(--px) * 92.16);
   --grid-x: calc(var(--px) * 83.5);
   --grid-y: calc(var(--px) * 31.7);
+  /* 文字物はこのグリッド線に揃える。
+     --col-x: ロゴ・左カラム・NEXT の左端 (縦線 0 本目)
+     --rnav-right: 右ナビの右端 (縦線 19 本目) を right で指定した値
+     --inset: 見出し文字をグリッド線から下げる量 */
+  --col-x: var(--grid-x);
+  --rnav-right: calc(var(--px) * 1920 - var(--grid-x) - var(--u) * 19);
+  --inset: calc(var(--px) * 14);
 
   --ink: #38204b;
   --pink: #fc3f9a;
@@ -97,6 +104,14 @@ button:focus-visible, textarea:focus-visible, input:focus-visible {
 }
 .backdrop.is-title .backdrop-title,
 .backdrop.is-firing .backdrop-firing { opacity: 1; }
+/* 焼成の熱。--heat (0 → 1, FiringPanel の温度カウンターが更新) が低いうちは黒く覆い、温度が上がるにつれて赤が出てくる */
+.backdrop-firing::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: #120910;
+  opacity: calc(0.92 * (1 - var(--heat, 0)));
+}
 
 /* ステージ原点に合わせた大グリッド。タイトル・焼成中は出さない */
 .backdrop-grid {
@@ -135,8 +150,8 @@ button:focus-visible, textarea:focus-visible, input:focus-visible {
 
 .logo {
   position: absolute;
-  left: calc(var(--px) * 118.75);
-  top: calc(var(--px) * 110.25);
+  left: var(--col-x);
+  top: calc(var(--grid-y) + var(--u));
   width: calc(var(--px) * 186.75);
   height: calc(var(--px) * 46.75);
   z-index: 4;
@@ -150,7 +165,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible {
 }
 
 /* JP 表示: 英数字も含めて游ゴシックで統一し、LoRes との混植はしない。
-   英語のまま出す要素 (ロゴは SVG、右ナビは下で指定) だけ LoRes のまま */
+   英語のまま出す要素 (ロゴは SVG、右ナビ・下端ナビは個別に指定) だけ LoRes のまま */
 :root:lang(ja) {
   --font-pixel: var(--font-jp);
 }
@@ -159,17 +174,18 @@ button:focus-visible, textarea:focus-visible, input:focus-visible {
 .rnav-item {
   position: absolute;
   font-family: var(--font-latin);
-  right: calc(var(--px) * 122);
+  right: var(--rnav-right);
   font-size: calc(var(--px) * 21);
   line-height: calc(var(--px) * 24);
   letter-spacing: 0.14em;
   white-space: nowrap;
   z-index: 4;
 }
-.rnav-item.is-about { top: calc(var(--px) * 125); }
-.rnav-item.is-lang { top: calc(var(--px) * 392); }
-.rnav-item.is-archive { top: calc(var(--px) * 661); }
-.rnav-item.is-share { top: calc(var(--px) * 929); }
+/* 横線 1・4・7 本目の下に置き、SHARE は下端をパネル下端 (横線 10 本目) に合わせる */
+.rnav-item.is-about { top: calc(var(--grid-y) + var(--u) * 1 + var(--inset)); }
+.rnav-item.is-lang { top: calc(var(--grid-y) + var(--u) * 4 + var(--inset)); }
+.rnav-item.is-archive { top: calc(var(--grid-y) + var(--u) * 7 + var(--inset)); }
+.rnav-item.is-share { top: calc(var(--grid-y) + var(--u) * 10 - var(--px) * 24); }
 .rnav-item.is-disabled { opacity: 0.4; }
 .rnav-item.active,
 .rnav-item .active { color: var(--pink); }
@@ -179,12 +195,17 @@ button.rnav-item:hover,
 /* ---------- 左カラム ---------- */
 .col {
   position: absolute;
-  left: calc(var(--px) * 123);
-  top: calc(var(--px) * 249);
+  left: var(--col-x);
+  top: calc(var(--grid-y) + var(--u) * 2);
   width: calc(var(--px) * 360);
   z-index: 2;
 }
 .group { margin-bottom: calc(var(--px) * 72); }
+/* Step 1 の項目はグリッドのマス数で高さを決め、見出しが毎回グリッド線の --inset 下に来るようにする */
+.group.is-u1,
+.group.is-u2 { margin-bottom: 0; }
+.group.is-u1 { height: var(--u); }
+.group.is-u2 { height: calc(var(--u) * 2); }
 .h {
   display: block;
   font-size: calc(var(--px) * 28);
@@ -197,14 +218,26 @@ button.h:hover,
 .h.active { color: var(--pink); }
 .h.is-dim { opacity: 0.4; }
 .h.is-dim:hover { opacity: 1; }
+/* 前の項目を選ぶまで使えない見出し (ホバーしても濃くならない) */
+.h.is-locked { opacity: 0.4; }
+.form-hint { margin-top: calc(var(--px) * 10); }
+/* ステップ見出し (1. ベースを選ぶ / 2. 見た目を選ぶ)。項目の見出し (.h) より大きく、下に罫線を引いて区別する。
+   高さをグリッド 1 マスにし、罫線が横線 3 本目に重なるようにする */
 .col .section-title {
-  margin-bottom: calc(var(--px) * 24);
-  font-size: calc(var(--px) * 21);
-  line-height: calc(var(--px) * 26);
+  display: flex;
+  align-items: baseline;
+  gap: calc(var(--px) * 14);
+  height: var(--u);
+  margin: 0 0 var(--inset);
+  padding: calc(var(--u) - var(--px) * 56) 0 calc(var(--px) * 14);
+  border-bottom: calc(var(--px) * 2) solid var(--ink);
+  font-size: calc(var(--px) * 36);
+  font-weight: 500;
+  line-height: calc(var(--px) * 40);
   letter-spacing: 0.1em;
   white-space: nowrap;
-  opacity: 0.7;
 }
+.col .section-title .step-no { font-family: var(--font-latin); }
 .items { margin-top: calc(var(--px) * 14); }
 .item {
   display: block;
@@ -238,59 +271,66 @@ button.h:hover,
   white-space: nowrap;
   opacity: 0.6;
 }
-.sub-h {
+/* 色相環は左カラムの幅いっぱい (360px) */
+.subs > .color-wheel-wrapper {
+  width: calc(var(--px) * 360);
+  height: calc(var(--px) * 360);
+  margin-top: calc(var(--px) * 10);
+}
+
+/* ---------- 中央パネル下部のオプション (Step 2 見た目: 表面・透明度・質感) ---------- */
+.panel-options {
+  position: absolute;
+  left: calc(var(--grid-x) + var(--u) * 5);
+  width: calc(var(--u) * 9);
+  /* パネル下端 (横線 10 本目) に下詰め */
+  bottom: calc(var(--px) * 1080 - var(--grid-y) - var(--u) * 10);
   display: flex;
-  align-items: baseline;
-  gap: calc(var(--px) * 12);
-  width: 100%;
-  min-height: calc(var(--px) * 30);
-  font-size: calc(var(--px) * 21);
-  line-height: calc(var(--px) * 30);
-  letter-spacing: 0.08em;
+  flex-direction: column;
+  gap: calc(var(--px) * 2);
+  padding: 0 var(--inset) var(--inset);
+  z-index: 3;
+}
+.opt-row {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: calc(var(--px) * 20);
+  font-size: calc(var(--px) * 16);
+  line-height: calc(var(--px) * 26);
+  letter-spacing: 0.06em;
+}
+/* チェックボックス風。選択中は箱がピンクに塗られる */
+.opt {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--px) * 8);
   white-space: nowrap;
 }
-.sub-h:hover,
-.sub.is-open > .sub-h { color: var(--pink); }
-/* 開閉しない小見出し (見た目の 色・表面・透明度・質感) は見出しを強調しない。
-   4 つが常に開くぶん縦に長くなるので、下端のナビ (top 920px) に被らないよう詰める */
-.sub.is-static > .sub-h {
-  color: inherit;
-  min-height: calc(var(--px) * 27);
-  line-height: calc(var(--px) * 27);
+.opt-box {
+  flex: none;
+  width: calc(var(--px) * 14);
+  height: calc(var(--px) * 14);
+  border: calc(var(--px) * 1.5) solid currentColor;
 }
-.sub.is-static > .sub-body { margin-bottom: calc(var(--px) * 2); }
-.sub.is-static .color-wheel-wrapper {
-  width: calc(var(--px) * 190);
-  height: calc(var(--px) * 190);
+.opt:hover,
+.opt.active { color: var(--pink); }
+.opt.active .opt-box { background: var(--pink); }
+.col.is-accordion .subs { margin-top: calc(var(--px) * 6); }
+/* Step 2: 開いていない選び方は級数を落として横並び */
+.mode-alts {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: calc(var(--px) * 20);
   margin-top: calc(var(--px) * 6);
 }
-/* 英語表示で選択肢が 2 行に折れにくいよう、中央パネルの手前まで幅を使う */
-.sub.is-static .items.is-inline { width: calc(var(--px) * 420); }
-.sub.is-static .items.is-inline .item { line-height: calc(var(--px) * 22); }
-.col.is-accordion .subs { margin-top: calc(var(--px) * 6); }
+.mode-alt {
+  font-size: calc(var(--px) * 19);
+  line-height: calc(var(--px) * 30);
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+.mode-alt:hover { color: var(--pink); }
 .col.is-accordion .group { margin-bottom: calc(var(--px) * 20); }
-.sub-val {
-  overflow: hidden;
-  min-width: 0;
-  color: var(--pink);
-  font-size: calc(var(--px) * 15);
-  letter-spacing: 0.04em;
-  text-overflow: ellipsis;
-}
-.sub-swatch {
-  display: inline-block;
-  width: calc(var(--px) * 30);
-  height: calc(var(--px) * 14);
-  vertical-align: baseline;
-  outline: 1px solid rgba(255, 255, 255, 0.8);
-}
-.sub-body { margin-bottom: calc(var(--px) * 6); }
-.sub-body .items.is-inline { margin-top: calc(var(--px) * 2); }
-.sub-body .items.is-inline .item {
-  font-size: calc(var(--px) * 17);
-  line-height: calc(var(--px) * 24);
-}
-.sub-body .subtabs { margin-top: calc(var(--px) * 2); }
 
 .subtabs {
   margin-top: calc(var(--px) * 14);
@@ -302,11 +342,13 @@ button.h:hover,
 .subtabs button:hover,
 .subtabs button.active { color: var(--pink); }
 
-/* 下端のナビ (BACK / NEXT / FIRE) */
+/* 下端のナビ (BACK / NEXT / FIRE)。JP 表示でも英語表記なので欧文書体 (LoRes) で出す */
 .nav {
   position: absolute;
-  left: calc(var(--px) * 123);
-  top: calc(var(--px) * 920);
+  font-family: var(--font-latin);
+  left: var(--col-x);
+  /* 文字の下端をパネル下端 (横線 10 本目) に合わせる */
+  top: calc(var(--grid-y) + var(--u) * 10 - var(--px) * 32);
   display: flex;
   align-items: center;
   gap: calc(var(--px) * 12);
@@ -472,6 +514,12 @@ button.h:hover,
   user-select: text;
 }
 .words::placeholder { color: var(--ink); opacity: 0.4; }
+/* 入力中のピンク枠 (button/textarea:focus-visible) はテキストエリアでは出さない */
+.words:focus-visible { outline: 0; }
+/* 感覚でつくる: CONFIRM (英語表記なので欧文書体)。結果の表示は 釉薬から選ぶ と同じ .glaze-combo */
+.mood-confirm { font-family: var(--font-latin); letter-spacing: 0.12em; }
+.mood-confirm:disabled { opacity: 0.35; color: inherit; }
+.sub-hint.is-warn { color: var(--pink); opacity: 1; white-space: normal; }
 
 /* ---------- 中央パネル ---------- */
 .panel {
@@ -511,7 +559,7 @@ button.h:hover,
   height: 100%;
   object-fit: cover;
   mix-blend-mode: multiply;
-  opacity: 0.8;
+  opacity: 0.45;
   transition: opacity 0.2s ease;
 }
 /* 細かいグリッドは絵の後ろに敷く */
@@ -527,22 +575,13 @@ button.h:hover,
   pointer-events: none;
   transition: opacity 0.2s ease;
 }
+/* 既定は薄く、ホバーで 100%、選択中はうっすらピンクが乗る */
 .shape-cell:not(:disabled):hover { background: rgba(255, 255, 255, 0.78); }
-.shape-cell.selected { background: #fff; }
+.shape-cell:not(:disabled):hover img { opacity: 1; }
+.shape-cell.selected { background: rgba(252, 63, 154, 0.14); }
 .shape-cell.selected img { opacity: 1; }
 .shape-cell.selected::after { opacity: 0; }
-.shape-cell:disabled img { opacity: 0.38; }
-.shape-label {
-  position: absolute;
-  left: calc(var(--px) * 2);
-  bottom: 0;
-  color: #fff;
-  font-size: calc(var(--px) * 13);
-  line-height: calc(var(--px) * 16);
-  letter-spacing: 0.12em;
-  z-index: 2;
-}
-.shape-cell.selected .shape-label { color: var(--pink); }
+.shape-cell:disabled img { opacity: 0.2; }
 
 /* 一筆描き */
 .sketcher {
@@ -596,6 +635,7 @@ button.h:hover,
   pointer-events: none;
 }
 .firing-title {
+  font-family: var(--font-latin);
   font-size: calc(var(--px) * 28);
   line-height: calc(var(--px) * 34);
   letter-spacing: 0.16em;
@@ -603,6 +643,7 @@ button.h:hover,
   animation: firingBlink 1.6s steps(2, jump-none) infinite;
 }
 .firing-temp {
+  font-family: var(--font-latin);
   margin-top: calc(var(--px) * 6);
   font-size: calc(var(--px) * 44);
   line-height: calc(var(--px) * 52);
@@ -631,11 +672,23 @@ button.h:hover,
   from { opacity: 0; }
   to { opacity: 1; }
 }
-.firing-phase {
-  margin-top: calc(var(--px) * 10);
-  font-size: calc(var(--px) * 15);
-  letter-spacing: 0.08em;
-  opacity: 0.85;
+/* 進捗: 工程ごとのコマ。終わったコマは白、今のコマは点滅、先のコマは薄い */
+.firing-steps {
+  display: flex;
+  gap: calc(var(--px) * 4);
+  width: calc(var(--px) * 300);
+  margin: calc(var(--px) * 20) auto 0;
+}
+.firing-step {
+  flex: 1;
+  height: calc(var(--px) * 8);
+  background: rgba(255, 255, 255, 0.22);
+}
+.firing-step.is-done { background: #fff; }
+.firing-step.is-now { animation: stepBlink 1.2s steps(2, jump-none) infinite; }
+@keyframes stepBlink {
+  from { background: rgba(255, 255, 255, 0.22); }
+  to { background: rgba(255, 255, 255, 0.8); }
 }
 @keyframes firingBlink {
   from { opacity: 1; }
@@ -645,8 +698,8 @@ button.h:hover,
 /* 焼き上がり: レシピ */
 .recipe {
   position: absolute;
-  left: calc(var(--px) * 119);
-  top: calc(var(--px) * 217);
+  left: var(--col-x);
+  top: calc(var(--grid-y) + var(--u) * 2 + var(--inset));
   width: calc(var(--px) * 333);
   height: calc(var(--px) * 646);
   display: flex;
@@ -768,8 +821,8 @@ button.h:hover,
 /* ---------- ABOUT ---------- */
 .about {
   position: absolute;
-  left: calc(var(--px) * 544.3);
-  top: calc(var(--px) * 256);
+  left: calc(var(--grid-x) + var(--u) * 5);
+  top: calc(var(--grid-y) + var(--u) * 2 + var(--inset));
   width: calc(var(--px) * 850);
   user-select: text;
 }
@@ -920,10 +973,21 @@ button.h:hover,
   line-height: calc(var(--px) * 30);
   letter-spacing: 0.12em;
 }
-.glaze-modal-head .link {
-  font-size: calc(var(--px) * 21);
-  letter-spacing: 0.12em;
+/* 右上の X (閉じる) */
+.close-x {
+  display: block;
+  align-self: center;
+  width: calc(var(--px) * 22);
+  height: calc(var(--px) * 22);
 }
+.close-x svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  fill: currentColor;
+  shape-rendering: crispEdges;
+}
+.close-x:hover { color: var(--pink); }
 .glaze-modal-body {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -940,6 +1004,19 @@ button.h:hover,
 }
 .glaze-picks .sub-hint,
 .glaze-cands .sub-hint { margin-bottom: calc(var(--px) * 12); }
+/* 釉薬のカテゴリ (基礎釉・白系…)。開閉せず全部開いている */
+.glaze-cat { margin-bottom: calc(var(--px) * 18); }
+.glaze-cat-h {
+  font-size: calc(var(--px) * 21);
+  line-height: calc(var(--px) * 30);
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+.glaze-cat .items.is-inline { margin-top: calc(var(--px) * 2); }
+.glaze-cat .items.is-inline .item {
+  font-size: calc(var(--px) * 17);
+  line-height: calc(var(--px) * 24);
+}
 .glaze-cands-title {
   margin-bottom: calc(var(--px) * 6);
   font-size: calc(var(--px) * 21);

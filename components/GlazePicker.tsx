@@ -14,8 +14,9 @@ import {
   type GlazeConditions,
   type GlazeIndex,
 } from "@/lib/glaze-index";
-import { GLAZE_CATEGORIES, glazeStyleByCode, type GlazeCategoryKey } from "@/lib/glaze-styles";
+import { GLAZE_CATEGORIES, glazeStyleByCode } from "@/lib/glaze-styles";
 import type { Lang, Strings } from "@/lib/i18n";
+import CloseButton from "./CloseButton";
 
 // 一度に並べる候補の上限。多すぎるときは件数だけ添えて、釉薬を追加で選ぶよう促す
 const MAX_CANDIDATES = 40;
@@ -56,7 +57,6 @@ export default function GlazePicker({
   onConfirm: (codes: string[]) => void;
   onClose: () => void;
 }) {
-  const [openCategory, setOpenCategory] = useState<GlazeCategoryKey | null>(null);
   // 候補のうち今ハイライトしているもの。開いた時点では確定済みの組み合わせ
   const [draft, setDraft] = useState<string[] | null>(combo);
 
@@ -107,55 +107,35 @@ export default function GlazePicker({
       >
         <div className="glaze-modal-head">
           <span>{t.glazeModalTitle}</span>
-          <button type="button" className="link" onClick={onClose}>
-            {t.glazeClose}
-          </button>
+          <CloseButton label={t.glazeClose} onClick={onClose} />
         </div>
 
         <div className="glaze-modal-body">
           <div className="glaze-picks">
             <div className="sub-hint">{t.glazeHint}</div>
-            {GLAZE_CATEGORIES.map((cat) => {
-              const picked = cat.styles.filter((s) => pickSet.has(s.code));
-              const open = openCategory === cat.key;
-              return (
-                <div key={cat.key} className={`sub ${open ? "is-open" : ""}`}>
-                  <button
-                    type="button"
-                    className="sub-h"
-                    onClick={() => setOpenCategory(open ? null : cat.key)}
-                  >
-                    <span>{lang === "en" ? cat.en : cat.ja}</span>
-                    {!open && picked.length > 0 && (
-                      <span className="sub-val">
-                        {picked.map((s) => (lang === "en" ? s.en : s.ja)).join(", ")}
-                      </span>
-                    )}
-                  </button>
-                  {open && (
-                    <div className="sub-body">
-                      <div className="items is-inline">
-                        {cat.styles.map((s) => {
-                          const picked = pickSet.has(s.code);
-                          const dim = !picked && available !== null && !available.has(s.code);
-                          return (
-                            <button
-                              key={s.code}
-                              type="button"
-                              className={`item ${picked ? "active" : ""} ${dim ? "is-dim" : ""}`}
-                              disabled={dim}
-                              onClick={() => onTogglePick(s.code)}
-                            >
-                              -{lang === "en" ? s.en : s.ja}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
+            {/* カテゴリは開閉せず、すべて開いた状態で並べる */}
+            {GLAZE_CATEGORIES.map((cat) => (
+              <div key={cat.key} className="glaze-cat">
+                <div className="glaze-cat-h">{lang === "en" ? cat.en : cat.ja}</div>
+                <div className="items is-inline">
+                  {cat.styles.map((s) => {
+                    const picked = pickSet.has(s.code);
+                    const dim = !picked && available !== null && !available.has(s.code);
+                    return (
+                      <button
+                        key={s.code}
+                        type="button"
+                        className={`item ${picked ? "active" : ""} ${dim ? "is-dim" : ""}`}
+                        disabled={dim}
+                        onClick={() => onTogglePick(s.code)}
+                      >
+                        -{lang === "en" ? s.en : s.ja}
+                      </button>
+                    );
+                  })}
                 </div>
-              );
-            })}
+              </div>
+            ))}
           </div>
 
           {/* 釉薬を 1 つも選んでいないときは候補を出さない */}

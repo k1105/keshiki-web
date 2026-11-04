@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import CaptureDebugger from "@/components/CaptureDebugger";
+import CloseButton from "@/components/CloseButton";
 import ColorWheel from "@/components/ColorWheel";
 import FiringPanel from "@/components/FiringPanel";
 import type { FiringProgress } from "@/lib/firing-run";
 import GlazePicker, { glazeComboLabel } from "@/components/GlazePicker";
-import HslSliderPicker from "@/components/HslSliderPicker";
 import ProfileSketcher from "@/components/ProfileSketcher";
 import VesselCanvas from "@/components/VesselCanvas";
 import { clayByKey, type ClayKey } from "@/lib/clay";
@@ -14,7 +14,14 @@ import { findClosestColor, type GlazeColor } from "@/lib/colors";
 import { defaultCaptureAngle, type CaptureAngle } from "@/lib/depth";
 import { baseConditionsOf, type Hyomen, type YuseijoA, type YuseijoB } from "@/lib/generate_v5";
 import { loadGlazeIndex, representativeGlazeColor, type GlazeIndex } from "@/lib/glaze-index";
+import { firingCapabilities } from "@/lib/firing-capabilities";
 import { STRINGS, type Lang } from "@/lib/i18n";
+import {
+  buildTextSearchInput,
+  mockTextSearch,
+  textSearch,
+  type TextSearchOutput,
+} from "@/lib/text_search";
 import {
   MODEL_SHAPES,
   type CustomVessel,
@@ -36,7 +43,7 @@ const GLAZE_GLOSS: Record<Hyomen, number> = {
 const DEFAULT_GLOSS = 70;
 
 // 焼成前のプレビューは器を小さめに置き、焼き上がりで大きく見せる
-const PREVIEW_ZOOM = 0.76;
+const PREVIEW_ZOOM = 0.64;
 const ROTATE_SPEED = 1.6;
 
 // 焼成温度の既定 (レシピは DB から選ばれるので、API に送る以外では使わない)
@@ -86,7 +93,7 @@ const CLAY_ORDER: { key: ClayKey; dir: string }[] = [
 ];
 
 type Mode = "visual" | "style" | "mood";
-type ColorMode = "wheel" | "slider";
+const MODES: Mode[] = ["visual", "style", "mood"];
 type View = "title" | "main";
 
 // ロゴはデザインのピクセル字形をそのままトレースしたもの（フォントに依存させない）
@@ -162,9 +169,7 @@ function SketchModal({
       >
         <div className="glaze-modal-head">
           <span>{title}</span>
-          <button type="button" className="link" onClick={onClose}>
-            {closeLabel}
-          </button>
+          <CloseButton label={closeLabel} onClick={onClose} />
         </div>
         <div className="sketch-modal-body finegrid">{children}</div>
       </div>
@@ -172,40 +177,35 @@ function SketchModal({
   );
 }
 
-/** 横並びの選択肢 (単一選択) */
-function InlineChoices<T extends string>({
+/** チェックボックス風の選択肢 (単一選択)。見出しは付けず、中央パネル下部に 1 行ずつ並べる */
+function OptionRow<T extends string>({
+  groupLabel,
   options,
   selected,
   label,
   onSelect,
 }: {
+  groupLabel: string;
   options: T[];
   selected: T;
   label: (v: T) => string;
   onSelect: (v: T) => void;
 }) {
   return (
-    <div className="items is-inline">
+    <div className="opt-row" role="radiogroup" aria-label={groupLabel}>
       {options.map((v) => (
         <button
           key={v}
           type="button"
-          className={`item ${selected === v ? "active" : ""}`}
+          role="radio"
+          aria-checked={selected === v}
+          className={`opt ${selected === v ? "active" : ""}`}
           onClick={() => onSelect(v)}
         >
-          -{label(v)}
+          <span className="opt-box" aria-hidden="true" />
+          {label(v)}
         </button>
       ))}
-    </div>
-  );
-}
-
-/** 小見出しと中身。開閉はしない (常に開いている) */
-function SubHead({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="sub is-static">
-      <div className="sub-h">{label}</div>
-      <div className="sub-body">{children}</div>
     </div>
   );
 }
@@ -218,19 +218,23 @@ export default function Home() {
 
   const [step, setStep] = useState(1);
 
-  // Step 1: 見出しは開閉しない (常に全部開いている)。かたちは中央のパネルに出し、一筆描きはモーダルで描く
+  // Step 1: かたち → 素地 → 焼成雰囲気 の順に選ぶ。選び終えた項目の次だけが有効になる。
+  // かたちは中央のパネル (9 マス) で選び、選ぶと中央は器のプレビューに替わる。
+  // 「かたち」見出しを押すと 9 マスに戻れる。一筆描きはモーダルで描く
+  const [formOpen, setFormOpen] = useState(true);
+  const [shapeChosen, setShapeChosen] = useState(false);
+  const [clayChosen, setClayChosen] = useState(false);
+  const [atmosphereChosen, setAtmosphereChosen] = useState(false);
   const [sketchOpen, setSketchOpen] = useState(false);
 
   const [shape, setShape] = useState<VesselShape>("vase");
   const [selectedCell, setSelectedCell] = useState<CellKey>("vase");
   const [customVessel, setCustomVessel] = useState<CustomVessel | null>(null);
   const [glaze, setGlaze] = useState<GlazeColor | null>(() => findClosestColor("#2f6d5f"));
-  // HSLスライダー編集中の「指定した色」。編集中はプレビューをディゾルブなしでその場更新する
-  const [livePreviewHex, setLivePreviewHex] = useState<string | null>(null);
-  const [colorMode, setColorMode] = useState<ColorMode>("wheel");
 
-  // Step 2: 3 方式のどれを開いているか。開くまでは見出しだけが並ぶ
-  const [mode, setMode] = useState<Mode | null>(null);
+  // Step 2: 3 方式のどれを開いているか。最初から「見た目」が開いている。
+  // 釉薬から選ぶ / 感覚でつくる は順番に選ぶ項目ではなく、同じ釉薬を別の選び方で決めるための入口
+  const [mode, setMode] = useState<Mode | null>("visual");
   const [hyomen, setHyomen] = useState<Hyomen>("HyomenKotaku");
   const [yuseijoA, setYuseijoA] = useState<YuseijoA>("YuseijoAYusyokuTomei");
   const [yuseijoB, setYuseijoB] = useState<YuseijoB>("YuseijoBKinitsu");
@@ -241,9 +245,13 @@ export default function Home() {
   const [glazeCombo, setGlazeCombo] = useState<string[] | null>(null);
   const [glazeModal, setGlazeModal] = useState(false);
   const [glazeIndex, setGlazeIndex] = useState<GlazeIndex | null>(null);
-  const [mood, setMood] = useState(
-    "きょうは雨上がりの森みたいな、静かで少し湿った感じな気分です。"
-  );
+  // 感覚でつくる: 文を書いて CONFIRM を押すと自由探索 (text_search) に投げ、
+  // 返ってきた実在レシピ (moodResult) が揃ってはじめて焼成に進める。文を変えたら確定は無効になる
+  const [mood, setMood] = useState("");
+  const [moodResult, setMoodResult] = useState<TextSearchOutput | null>(null);
+  const [moodStatus, setMoodStatus] = useState<"idle" | "loading" | "error">("idle");
+  const [moodError, setMoodError] = useState<string | null>(null);
+  const moodAbort = useRef<AbortController | null>(null);
 
   const [clayKey, setClayKey] = useState<ClayKey>("stoneware-white");
   const clay = clayByKey(clayKey);
@@ -306,13 +314,27 @@ export default function Home() {
     if (!cell.shape) return;
     setSelectedCell(cell.key);
     setShape(cell.shape);
+    setShapeChosen(true);
+    setFormOpen(false);
   };
 
   const pickCustomShape = (v: CustomVessel) => {
     setCustomVessel(v);
     setShape("custom");
     setSelectedCell("surprise");
+    setShapeChosen(true);
+    setFormOpen(false);
     setSketchOpen(false);
+  };
+
+  const pickClay = (key: ClayKey) => {
+    setClayKey(key);
+    setClayChosen(true);
+  };
+
+  const pickAtmosphere = (v: string) => {
+    setAtmosphere(v);
+    setAtmosphereChosen(true);
   };
 
   const toggleGlazePick = (code: string) => {
@@ -331,6 +353,55 @@ export default function Home() {
     setGlazeModal(false);
   };
 
+  const editMood = (text: string) => {
+    setMood(text);
+    // 文が変わったら前の確定は捨てる
+    if (moodResult || moodStatus !== "idle") {
+      moodAbort.current?.abort();
+      setMoodResult(null);
+      setMoodStatus("idle");
+      setMoodError(null);
+    }
+  };
+
+  const confirmMood = async () => {
+    const text = mood.trim();
+    if (!text) return;
+    moodAbort.current?.abort();
+    const controller = new AbortController();
+    moodAbort.current = controller;
+    setMoodStatus("loading");
+    setMoodError(null);
+    setMoodResult(null);
+    const input = buildTextSearchInput(text, { topK: 1, filters: baseConditions });
+    const caps = firingCapabilities();
+    try {
+      const out = caps.mock
+        ? await mockTextSearch(input, caps.mockSpeed)
+        : await textSearch(input, controller.signal);
+      if (controller.signal.aborted) return;
+      if (out.results.length === 0) throw { error: "empty" };
+      setMoodResult(out);
+      setMoodStatus("idle");
+    } catch (e) {
+      if (controller.signal.aborted) return;
+      const msg =
+        typeof e === "object" && e && "message" in e ? (e as { message?: string }).message : undefined;
+      setMoodError(msg ?? null);
+      setMoodStatus("error");
+    }
+  };
+  const moodPick = moodResult?.results[0] ?? null;
+
+  // Step 2 の 3 つの選び方。開いているもの以外は下に小さく並べる
+  const activeMode: Mode = mode ?? "visual";
+  const modeLabel = (m: Mode) =>
+    m === "visual" ? t.appearance : m === "style" ? t.glazeHeading : t.inspiration;
+  const openMode = (m: Mode) => {
+    if (m === "style") openGlazeModal();
+    else setMode(m);
+  };
+
   const startFiring = () => {
     setFiringProgress(null);
     setFiring(true);
@@ -341,7 +412,7 @@ export default function Home() {
   const canFire =
     mode === "visual" ||
     (mode === "style" && glazeCombo !== null) ||
-    (mode === "mood" && mood.trim().length > 0);
+    (mode === "mood" && moodPick !== null);
 
   // Step 1 では釉薬をかける前の素地を表示し、Step 2 では選択中の釉薬の単色（DB 上の色）を
   // 即座に器に載せる。テストピース画像はテクスチャとして使わない。
@@ -363,10 +434,18 @@ export default function Home() {
           gloss: DEFAULT_GLOSS,
           tone: GLAZE_TONE,
         }
-      : {
+      : mode === "mood" && moodPick
+        ? {
+            texturePath: null,
+            hex: moodPick.color,
+            dissolveKey: `mood:${moodPick.recipe_id}`,
+            gloss: DEFAULT_GLOSS,
+            tone: GLAZE_TONE,
+          }
+        : {
           texturePath: null,
           hex: glaze?.hex ?? null,
-          dissolveKey: livePreviewHex !== null ? "live" : `glaze:${glaze?.id ?? "none"}`,
+          dissolveKey: `glaze:${glaze?.id ?? "none"}`,
           gloss: mode === "visual" ? GLAZE_GLOSS[hyomen] : DEFAULT_GLOSS,
           tone: GLAZE_TONE,
         };
@@ -385,8 +464,8 @@ export default function Home() {
       : null;
   const inKiln = firingNow && firingPoints === null;
   const lowPoly = step < 3 || inKiln;
-  // 器の 3D プレビューを出す画面。Step 1 は中央にかたちの一覧 (または一筆描き) を出すので出さない
-  const showViewer = inFlow && step >= 2;
+  // 器の 3D プレビューを出す画面。Step 1 でかたちの一覧を出している間は出さない
+  const showViewer = inFlow && (step >= 2 || !formOpen);
 
   const backdropState = view === "title" ? "is-title" : inFlow && firingNow ? "is-firing" : "";
 
@@ -426,18 +505,18 @@ export default function Home() {
             <div className="rnav-item is-lang">
               <button
                 type="button"
-                className={lang === "en" ? "active" : ""}
-                onClick={() => setLang("en")}
-              >
-                EN
-              </button>
-              <span> / </span>
-              <button
-                type="button"
                 className={lang === "ja" ? "active" : ""}
                 onClick={() => setLang("ja")}
               >
                 JP
+              </button>
+              <span> / </span>
+              <button
+                type="button"
+                className={lang === "en" ? "active" : ""}
+                onClick={() => setLang("en")}
+              >
+                EN
               </button>
             </div>
             {/* ARCHIVE / SHARE は未実装のため非活性 */}
@@ -477,40 +556,60 @@ export default function Home() {
 
         {/* 制作フロー。ABOUT / タイトル表示中も状態を保つため、隠すだけでアンマウントしない */}
         <div className="flow" hidden={!inFlow}>
-          {/* Step 1: 形・素地・焼成雰囲気。見出しと中身は常に全部出す (開閉なし) */}
+          {/* Step 1: かたち → 素地 → 焼成雰囲気。前の項目を選ぶまで次はグレーアウト */}
           {step === 1 && (
             <>
               <div className="col">
-                <div className="section-title">{t.selectBase}</div>
-                <div className="group">
-                  <div className="h">{t.clayBody}</div>
+                <h2 className="section-title">
+                  <span className="step-no">1.</span>
+                  {t.selectBase}
+                </h2>
+                <div className="group is-u1">
+                  <button
+                    type="button"
+                    className={`h ${formOpen ? "active" : ""}`}
+                    onClick={() => setFormOpen(true)}
+                  >
+                    {t.form}
+                  </button>
+                  <div className="sub-hint form-hint">{t.formHint}</div>
+                </div>
+                <div className="group is-u2">
+                  <div className={`h ${shapeChosen ? "" : "is-locked"}`}>{t.clayBody}</div>
                   <div className="items">
                     {CLAY_ORDER.map((c) => (
                       <button
                         key={c.key}
                         type="button"
-                        className={`item ${clayKey === c.key ? "active" : ""}`}
-                        onClick={() => setClayKey(c.key)}
+                        className={`item ${clayChosen && clayKey === c.key ? "active" : ""}`}
+                        disabled={!shapeChosen}
+                        onClick={() => pickClay(c.key)}
                       >
                         -{t.clays[c.key]}
                       </button>
                     ))}
                   </div>
                 </div>
-                <div className="group">
-                  <div className="h">{t.atmosphere}</div>
+                <div className="group is-u2">
+                  <div className={`h ${clayChosen ? "" : "is-locked"}`}>{t.atmosphere}</div>
                   <div className="items">
                     <button
                       type="button"
-                      className={`item ${atmosphere === "酸化焼成" ? "active" : ""}`}
-                      onClick={() => setAtmosphere("酸化焼成")}
+                      className={`item ${
+                        atmosphereChosen && atmosphere === "酸化焼成" ? "active" : ""
+                      }`}
+                      disabled={!clayChosen}
+                      onClick={() => pickAtmosphere("酸化焼成")}
                     >
                       -{t.oxidation}
                     </button>
                     <button
                       type="button"
-                      className={`item ${atmosphere === "還元焼成" ? "active" : ""}`}
-                      onClick={() => setAtmosphere("還元焼成")}
+                      className={`item ${
+                        atmosphereChosen && atmosphere === "還元焼成" ? "active" : ""
+                      }`}
+                      disabled={!clayChosen}
+                      onClick={() => pickAtmosphere("還元焼成")}
                     >
                       -{t.reduction}
                     </button>
@@ -518,10 +617,12 @@ export default function Home() {
                 </div>
               </div>
 
-              <div className="panel shape-grid">
+              {/* かたちの 9 マス。選ぶと閉じて中央は器のプレビューになる */}
+              {formOpen && (
+                <div className="panel shape-grid">
                   {FORM_CELLS.map((cell) => {
                     const selectable = cell.key === "surprise" || !!cell.shape;
-                    const selected = selectedCell === cell.key;
+                    const selected = shapeChosen && selectedCell === cell.key;
                     const cellLabel =
                       cell.key === "surprise" && selected ? t.shapes.wheel : t.shapes[cell.key];
                     return (
@@ -530,15 +631,16 @@ export default function Home() {
                         type="button"
                         className={`shape-cell ${selected ? "selected" : ""}`}
                         disabled={!selectable}
+                        aria-label={cellLabel}
                         onClick={() => pickCell(cell)}
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img src={`/shapes/${clayDir}/${cell.key}.jpg`} alt="" />
-                        <span className="shape-label">{cellLabel}</span>
                       </button>
                     );
                   })}
-              </div>
+                </div>
+              )}
 
               {/* 一筆描き: モーダルで描き、描き終わると閉じて custom の形になる */}
               {sketchOpen && (
@@ -567,99 +669,24 @@ export default function Home() {
           {step === 2 && (
             <>
               <div className="col is-accordion">
-                <div className="section-title">{t.selectLook}</div>
+                <h2 className="section-title">
+                  <span className="step-no">2.</span>
+                  {t.selectLook}
+                </h2>
 
+                {/* 開いている選び方だけを大きな見出しで出し、残り 2 つは下に小さく横並びにする。
+                    3 つは順番の項目ではなく、同じ釉薬を別の入口から決めるための切り替え */}
                 <div className="group">
-                  <button
-                    type="button"
-                    className={`h ${mode === "visual" ? "active" : mode ? "is-dim" : ""}`}
-                    onClick={() => setMode("visual")}
-                  >
-                    {t.appearance}
+                  <button type="button" className="h active" onClick={() => openMode(activeMode)}>
+                    {modeLabel(activeMode)}
                   </button>
-                  {mode === "visual" && (
+                  {activeMode === "visual" && (
                     <div className="subs">
-                      <SubHead
-                        label={t.color}
-                      >
-                        <div className="subtabs">
-                          <button
-                            type="button"
-                            className={colorMode === "wheel" ? "active" : ""}
-                            onClick={() => setColorMode("wheel")}
-                          >
-                            -{t.colorWheel}
-                          </button>
-                          <span> / </span>
-                          <button
-                            type="button"
-                            className={colorMode === "slider" ? "active" : ""}
-                            onClick={() => setColorMode("slider")}
-                          >
-                            {t.hslSliders}
-                          </button>
-                        </div>
-                        {colorMode === "wheel" ? (
-                          <ColorWheel
-                            selected={glaze}
-                            onSelect={setGlaze}
-                            labels={t.wheelFilters}
-                          />
-                        ) : (
-                          <HslSliderPicker
-                            selected={glaze}
-                            onSelect={setGlaze}
-                            onPreviewColor={setLivePreviewHex}
-                            labels={t}
-                          />
-                        )}
-                      </SubHead>
-
-                      <SubHead
-                        label={t.surface}
-                      >
-                        <InlineChoices
-                          options={HYOMEN_OPTIONS}
-                          selected={hyomen}
-                          label={(v) => t.hyomen[v]}
-                          onSelect={setHyomen}
-                        />
-                      </SubHead>
-
-                      <SubHead
-                        label={t.transparency}
-                      >
-                        <InlineChoices
-                          options={YUSEIJO_A_OPTIONS}
-                          selected={yuseijoA}
-                          label={(v) => t.yuseijoA[v]}
-                          onSelect={setYuseijoA}
-                        />
-                      </SubHead>
-
-                      <SubHead
-                        label={t.character}
-                      >
-                        <InlineChoices
-                          options={YUSEIJO_B_OPTIONS}
-                          selected={yuseijoB}
-                          label={(v) => t.yuseijoB[v]}
-                          onSelect={setYuseijoB}
-                        />
-                      </SubHead>
+                      {/* 色は色相環だけで選ぶ (小見出し・HSL スライダーは無し) */}
+                      <ColorWheel selected={glaze} onSelect={setGlaze} labels={t.wheelFilters} />
                     </div>
                   )}
-                </div>
-
-                <div className="group">
-                  <button
-                    type="button"
-                    className={`h ${mode === "style" ? "active" : mode ? "is-dim" : ""}`}
-                    onClick={openGlazeModal}
-                  >
-                    {t.glazeHeading}
-                  </button>
-                  {mode === "style" && (
+                  {activeMode === "style" && (
                     <div className="subs">
                       {glazeCombo ? (
                         <div className="glaze-combo">
@@ -676,24 +703,48 @@ export default function Home() {
                       </button>
                     </div>
                   )}
+                  {activeMode === "mood" && (
+                    <div className="subs">
+                      <textarea
+                        className="words"
+                        placeholder={t.moodPlaceholder}
+                        value={mood}
+                        onChange={(e) => editMood(e.target.value)}
+                      />
+                      {moodPick ? (
+                        <div className="glaze-combo">
+                          <span className="glaze-combo-swatch" style={{ background: moodPick.color }} />
+                          {moodPick.glaze_types
+                            .map((g) => (lang === "en" ? g.en : g.ja))
+                            .join(lang === "en" ? ", " : "、")}
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          className="glaze-change mood-confirm"
+                          disabled={moodStatus === "loading" || mood.trim().length === 0}
+                          onClick={confirmMood}
+                        >
+                          -{t.moodConfirm}
+                        </button>
+                      )}
+                      {moodStatus === "loading" && <div className="sub-hint">{t.moodSearching}</div>}
+                      {moodStatus === "error" && (
+                        <div className="sub-hint is-warn">
+                          {t.moodFailed}
+                          {moodError ? ` (${moodError})` : ""}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
-                <div className="group">
-                  <button
-                    type="button"
-                    className={`h ${mode === "mood" ? "active" : mode ? "is-dim" : ""}`}
-                    onClick={() => setMode("mood")}
-                  >
-                    {t.inspiration}
-                  </button>
-                  {mode === "mood" && (
-                    <textarea
-                      className="words"
-                      placeholder={t.moodPlaceholder}
-                      value={mood}
-                      onChange={(e) => setMood(e.target.value)}
-                    />
-                  )}
+                <div className="mode-alts">
+                  {MODES.filter((m) => m !== activeMode).map((m) => (
+                    <button key={m} type="button" className="mode-alt" onClick={() => openMode(m)}>
+                      -{modeLabel(m)}
+                    </button>
+                  ))}
                 </div>
               </div>
 
@@ -721,6 +772,7 @@ export default function Home() {
               yuseijoB,
               glazeCodes: glazeCombo ?? [],
               mood,
+              moodRecipeId: moodPick?.recipe_id ?? null,
               clay: clay.name,
               atmosphere,
               temp: DEFAULT_TEMP,
@@ -774,6 +826,33 @@ export default function Home() {
               onConfirm={confirmGlazeCombo}
               onClose={() => setGlazeModal(false)}
             />
+          )}
+
+          {/* Step 2 見た目: 表面・透明度・質感は中央パネルの下部にチェックボックス風で並べる (見出し無し) */}
+          {step === 2 && mode === "visual" && (
+            <div className="panel-options">
+              <OptionRow
+                groupLabel={t.surface}
+                options={HYOMEN_OPTIONS}
+                selected={hyomen}
+                label={(v) => t.hyomen[v]}
+                onSelect={setHyomen}
+              />
+              <OptionRow
+                groupLabel={t.transparency}
+                options={YUSEIJO_A_OPTIONS}
+                selected={yuseijoA}
+                label={(v) => t.yuseijoA[v]}
+                onSelect={setYuseijoA}
+              />
+              <OptionRow
+                groupLabel={t.character}
+                options={YUSEIJO_B_OPTIONS}
+                selected={yuseijoB}
+                label={(v) => t.yuseijoB[v]}
+                onSelect={setYuseijoB}
+              />
+            </div>
           )}
 
           {showViewer && (
