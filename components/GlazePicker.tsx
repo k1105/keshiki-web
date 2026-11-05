@@ -40,6 +40,7 @@ export default function GlazePicker({
   conditions,
   picks,
   onTogglePick,
+  onClearPicks,
   combo,
   onConfirm,
   onClose,
@@ -52,6 +53,8 @@ export default function GlazePicker({
   /** 気になる釉薬として選んだコード */
   picks: string[];
   onTogglePick: (code: string) => void;
+  /** 気になる釉薬の選択をすべて外す */
+  onClearPicks: () => void;
   /** 確定済みの組み合わせ (未確定は null) */
   combo: string[] | null;
   onConfirm: (codes: string[]) => void;
@@ -179,6 +182,18 @@ export default function GlazePicker({
         </div>
 
         <div className="glaze-modal-foot">
+          {/* モーダル内の選択 (気になる釉薬・候補のハイライト) を最初の状態に戻す。確定済みの組み合わせは決定するまで変えない */}
+          <button
+            type="button"
+            className="link"
+            disabled={picks.length === 0 && !draft}
+            onClick={() => {
+              setDraft(null);
+              onClearPicks();
+            }}
+          >
+            {t.glazeClear}
+          </button>
           <button
             type="button"
             className="link"

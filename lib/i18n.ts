@@ -85,6 +85,7 @@ const en = {
   glazeCount: (n: number) => `${n} ${n === 1 ? "recipe" : "recipes"}`,
   glazeMore: (n: number) => `${n} more. Pick more glazes to narrow down.`,
   glazeConfirm: "CONFIRM",
+  glazeClear: "CLEAR",
   glazeClose: "CLOSE",
   glazeLoading: "Loading the database...",
   moodPlaceholder:
@@ -222,6 +223,7 @@ const ja: Strings = {
   glazeCount: (n: number) => `${n}件`,
   glazeMore: (n: number) => `ほか${n}件。釉薬を追加で選ぶと絞り込めます`,
   glazeConfirm: "決定",
+  glazeClear: "クリア",
   glazeClose: "閉じる",
   glazeLoading: "データベースを読み込み中...",
   moodPlaceholder:

@@ -512,7 +512,8 @@ export default function Home() {
             className="logo"
             onClick={() => {
               setAbout(false);
-              setView("title");
+              setView("main");
+              setStep(1);
             }}
           >
             <Logo />
@@ -849,6 +850,7 @@ export default function Home() {
               conditions={baseConditions}
               picks={glazePicks}
               onTogglePick={toggleGlazePick}
+              onClearPicks={() => setGlazePicks([])}
               combo={glazeCombo}
               onConfirm={confirmGlazeCombo}
               onClose={() => setGlazeModal(false)}

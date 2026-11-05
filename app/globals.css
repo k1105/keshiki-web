@@ -1071,7 +1071,7 @@ button.h:hover,
 }
 .glaze-modal-foot {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
   margin-top: calc(var(--px) * 22);
   font-size: calc(var(--px) * 24);
   font-weight: 500;
