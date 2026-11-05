@@ -577,6 +577,88 @@ function PointCloud({
   );
 }
 
+/**
+ * 深度画像と同じ構図 (lib/depth.ts)。yaw / pitch は度、zoom は器の大きさ (枠に対する倍率)。
+ * 深度画像は器を yaw だけ回して撮るが、ここでは器を回さずカメラを逆向きに回して同じ見え方にする
+ */
+export type VesselPose = { yaw: number; pitch: number; zoom: number };
+
+const POSE_DURATION = 0.9; // 秒。今の向きから構図に着くまで
+
+/**
+ * pose の指定中は、カメラの向きと器の大きさを構図に合わせて動かし、着いたらそのまま止める。
+ * 中身 (器と影) をまとめて拡大縮小するので、器の zoom (baseZoom) は変えずに済む。
+ * pose を外すと大きさだけ元に戻す (向きは OrbitControls の自動回転が続きから回す)
+ */
+function PoseRig({
+  pose,
+  baseZoom,
+  onPosed,
+  children,
+}: {
+  pose: VesselPose | null;
+  baseZoom: number;
+  onPosed?: () => void;
+  children: React.ReactNode;
+}) {
+  const group = useRef<THREE.Group>(null);
+  const anim = useRef<{
+    t: number;
+    theta0: number;
+    phi0: number;
+    scale0: number;
+    notified: boolean;
+  } | null>(null);
+  const onPosedRef = useRef(onPosed);
+  onPosedRef.current = onPosed;
+  const spherical = useMemo(() => new THREE.Spherical(), []);
+
+  // OrbitControls の update (優先度 -1) の後に動くので、ここで置いた位置がそのまま描かれる
+  useFrame(({ camera }, delta) => {
+    const g = group.current;
+    if (!g) return;
+    if (!pose) {
+      anim.current = null;
+      if (g.scale.x !== 1) {
+        const s = THREE.MathUtils.damp(g.scale.x, 1, 6, delta);
+        g.scale.setScalar(Math.abs(s - 1) < 1e-3 ? 1 : s);
+      }
+      return;
+    }
+
+    spherical.setFromVector3(camera.position);
+    let a = anim.current;
+    if (!a) {
+      a = anim.current = {
+        t: 0,
+        theta0: spherical.theta,
+        phi0: spherical.phi,
+        scale0: g.scale.x,
+        notified: false,
+      };
+    }
+    // 近い側へ回す (最大で半周)
+    const turn = THREE.MathUtils.euclideanModulo(
+      (-pose.yaw * Math.PI) / 180 - a.theta0 + Math.PI,
+      Math.PI * 2
+    ) - Math.PI;
+    a.t = Math.min(1, a.t + delta / POSE_DURATION);
+    const e = a.t * a.t * (3 - 2 * a.t);
+    spherical.theta = a.theta0 + turn * e;
+    spherical.phi = THREE.MathUtils.lerp(a.phi0, Math.PI / 2 - (pose.pitch * Math.PI) / 180, e);
+    camera.position.setFromSpherical(spherical);
+    camera.lookAt(0, 0, 0);
+    g.scale.setScalar(THREE.MathUtils.lerp(a.scale0, pose.zoom / baseZoom, e));
+
+    if (a.t >= 1 && !a.notified) {
+      a.notified = true;
+      onPosedRef.current?.();
+    }
+  });
+
+  return <group ref={group}>{children}</group>;
+}
+
 export type VesselCanvasProps = {
   shape: VesselShape;
   custom?: CustomVessel | null;
@@ -597,6 +679,10 @@ export type VesselCanvasProps = {
   glb?: string | null;
   /** 焼成中の途中経過の粒。glb が無いときに手続き生成の器の代わりに表示する */
   points?: ProgressPoints | null;
+  /** 深度画像と同じ構図。指定中は自動回転と手での回転を止め、この構図へ動かして止める */
+  pose?: VesselPose | null;
+  /** pose の構図に着いたとき (pose を指定するたびに 1 回) */
+  onPosed?: () => void;
 };
 
 export default function VesselCanvas({
@@ -613,6 +699,8 @@ export default function VesselCanvas({
   lowPoly = false,
   glb = null,
   points = null,
+  pose = null,
+  onPosed,
 }: VesselCanvasProps) {
   const spec = resolveVesselSpec(shape, custom);
   const vesselHeight = spec.height * spec.scale * zoom;
@@ -628,30 +716,33 @@ export default function VesselCanvas({
       <ambientLight intensity={0.9} />
       <directionalLight position={[3, 5, 2]} intensity={2.2} />
       <directionalLight position={[-3, 2, -3]} intensity={0.6} />
-      {glb ? (
-        <GlbModel url={glb} height={vesselHeight} bottomY={bottomY + 0.02} />
-      ) : points ? (
-        <PointCloud data={points} height={vesselHeight} bottomY={bottomY + 0.02} hex={hex} />
-      ) : (
-        <Vessel
-          shape={shape}
-          custom={custom}
-          glaze={{ texturePath, hex, dissolveKey, gloss, tone }}
-          zoom={zoom}
-          lowPoly={lowPoly}
+      <PoseRig pose={pose} baseZoom={zoom} onPosed={onPosed}>
+        {glb ? (
+          <GlbModel url={glb} height={vesselHeight} bottomY={bottomY + 0.02} />
+        ) : points ? (
+          <PointCloud data={points} height={vesselHeight} bottomY={bottomY + 0.02} hex={hex} />
+        ) : (
+          <Vessel
+            shape={shape}
+            custom={custom}
+            glaze={{ texturePath, hex, dissolveKey, gloss, tone }}
+            zoom={zoom}
+            lowPoly={lowPoly}
+          />
+        )}
+        <ContactShadows
+          position={[0, bottomY, 0]}
+          opacity={0.35}
+          scale={6}
+          blur={2.4}
+          far={2}
         />
-      )}
-      <ContactShadows
-        position={[0, bottomY, 0]}
-        opacity={0.35}
-        scale={6}
-        blur={2.4}
-        far={2}
-      />
+      </PoseRig>
       <OrbitControls
         enablePan={false}
         enableZoom={false}
-        autoRotate={autoRotate}
+        enableRotate={!pose}
+        autoRotate={autoRotate && !pose}
         autoRotateSpeed={autoRotateSpeed}
         minPolarAngle={Math.PI / 4}
         maxPolarAngle={(Math.PI * 3) / 4}

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { additivesForColor } from "@/lib/recipe";
 import { SEGER_ROWS, type FiringUiState } from "@/lib/firing-request";
+import { createDepthCutter } from "@/lib/cutout";
 import { DEFAULT_CAPTURE_ANGLE, renderVesselDepthPng, type CaptureAngle } from "@/lib/depth";
 import { firingCapabilities } from "@/lib/firing-capabilities";
 import { createMockJobClient } from "@/lib/firing-mock";
@@ -386,6 +387,8 @@ export default function FiringPanel({
           signal: controller.signal,
           timeoutMessage: t.fireTimeout,
           onProgress: publish,
+          // 途中の絵も焼き上がりの絵も、送った深度画像で背景を抜いてから見せる
+          finishImage: createDepthCutter(depthPng),
         }
       ).catch((e): FiringProgress => ({
         ...initialProgress(),

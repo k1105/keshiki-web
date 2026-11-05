@@ -615,13 +615,21 @@ button.h:hover,
   width: 100%;
   height: 100%;
 }
+/* 焼き上がりの絵 (背景を抜いた PNG)。器の 3D プレビューと同じ枠に出す */
+.fired-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
 /* 焼成中: 窯の中でぼやけて見える器 */
 .viewer.is-firing {
   filter: blur(calc(var(--px) * 16)) saturate(1.4) brightness(0.6);
   mix-blend-mode: multiply;
-  transform: scale(1.12);
   pointer-events: none;
 }
+/* 途中の絵から焼き上がりの絵へは、同じ位置でそのまま差し替える (ぼかしやフェードを挟まない) */
+.viewer.is-swap { transition: none; }
 
 /* ---------- 焼成 ---------- */
 .stage.is-firing { color: rgba(255, 255, 255, 0.82); }

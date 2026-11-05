@@ -2,11 +2,13 @@
 //
 // 正本: docs/api/serverless_api_v5.md / serverless_api_3d.md / serverless_api_progress.md 4「フロントでの受け取り方」。
 // - /status は 1 秒ごとに見る (途中経過は上書きで最後の 1 件しか見えないため)
-// - v5 の途中経過: recipe (約 1 秒で届く。焼成温度の目標) と preview (同じ step は 1 回だけ)
+// - v5 の途中経過: recipe (約 1 秒で届く。焼成温度の目標) と preview (同じ step は 1 回だけ。
+//   finishImage で背景を抜いてから進捗に入れる)
 // - v5 完了: images[0].url をそのまま 3D に渡す (切り抜かない)
 // - 3D の途中経過: stage ごとに cutout / points / faces を保持する
 // - 3D 完了: glb (と detail があれば色のない形状の glb)
-// - caps.model3d が false のときは 3D を呼ばず、v5 の絵が出た時点で done にする (glb は null のまま)
+// - caps.model3d が false のときは 3D を呼ばず、v5 の絵を仕上げて (finishImage: 背景の切り抜き)
+//   firedImage に入れ、done にする (glb は null のまま)。焼き上がりは firedImage を見せる
 // 画面の演出 (温度カウンター・粒の描画など) はこの進捗 (FiringProgress) を見て描く。ここでは描かない。
 
 import type { FiringCapabilities } from "./firing-capabilities";
@@ -53,13 +55,15 @@ export type FiringProgress = {
   // ---- v5 ----
   /** 選ばれたレシピ。生成より先 (約 1 秒) に届く。temp を温度演出の目標にする */
   recipe: RecipeV5 | null;
-  /** 最新の生成途中の絵 (preview 対応時のみ) */
+  /** 最新の生成途中の絵 (preview 対応時のみ)。finishImage があれば背景を抜いた PNG */
   preview: PreviewFrameV5 | null;
   /** 受け取った途中の絵の step (重複排除用) */
   previewSteps: number[];
   /** 完成した器の画像 (data URL) */
   image: string | null;
   output: GenerateOutputV5 | null;
+  /** 焼き上がりとして見せる絵 (3D を作らないときだけ)。image の背景を抜いた PNG。抜けなかったら image と同じ */
+  firedImage: string | null;
   // ---- 3D ----
   cutout: string | null;
   /** 最新の粒 (粗い → 細かい → 色付き の順で置き換わる) */
@@ -92,6 +96,11 @@ export type RunFiringOptions = {
   signal: AbortSignal;
   /** ポーリング上限を超えたときのメッセージ */
   timeoutMessage: string;
+  /**
+   * 絵の仕上げ (背景の切り抜き)。生成途中の絵と、3D を作らないときの焼き上がりの絵に使う。
+   * 省略時・失敗時は v5 の絵をそのまま使う
+   */
+  finishImage?: (image: string) => Promise<string>;
 };
 
 export const POLL_MS = 1000; // progress 仕様書: 途中経過は上書きなので 1 秒間隔
@@ -108,6 +117,7 @@ export function initialProgress(startedAt = Date.now()): FiringProgress {
     previewSteps: [],
     image: null,
     output: null,
+    firedImage: null,
     cutout: null,
     points: null,
     faces: null,
@@ -260,8 +270,22 @@ export async function runFiring(
             if (o.recipe) patch.recipe = o.recipe;
             // 途中の絵は上書きで届くので、同じ step は 1 回だけ扱う
             if (o.preview && !p.previewSteps.includes(o.preview.step)) {
-              patch.preview = o.preview;
-              patch.previewSteps = [...p.previewSteps, o.preview.step];
+              const frame = o.preview;
+              patch.previewSteps = [...p.previewSteps, frame.step];
+              if (opts.finishImage) {
+                // 途中の絵も背景を抜いてから出す (抜けなかったらそのまま)。
+                // 抜き終わる前に生成が終わったか、先の step の絵が出ていたら捨てる
+                opts
+                  .finishImage(frame.image)
+                  .catch(() => frame.image)
+                  .then((image) => {
+                    if (p.stage !== "running") return;
+                    if (p.preview && p.preview.step >= frame.step) return;
+                    update({ preview: { ...frame, image } });
+                  });
+              } else {
+                patch.preview = frame;
+              }
             }
           }
           update(patch);
@@ -272,13 +296,26 @@ export async function runFiring(
         return fail("v5", { error: "empty_output", message: "画像が返されませんでした" });
       }
       output = r.output;
-      update({ recipe: output.recipe, image: output.images[0].url, output });
+      // 3D を作らないときは、絵は仕上げが済んでから done と一緒に出す (背景つきの絵を一瞬見せない)
+      if (opts.caps.model3d) {
+        update({ recipe: output.recipe, image: output.images[0].url, output });
+      }
     }
 
     // ---- 3D: 器の画像 → GLB ----
-    // 一時無効化中 (lib/firing-capabilities.ts model3d)。v5 の絵だけで焼き上がりにする
+    // 一時無効化中 (lib/firing-capabilities.ts model3d)。v5 の絵 (背景を抜いたもの) で焼き上がりにする
     if (!opts.caps.model3d) {
-      update({ stage: "done" });
+      const image = output.images[0].url;
+      let firedImage = image;
+      if (opts.finishImage) {
+        try {
+          firedImage = await opts.finishImage(image);
+        } catch (e) {
+          console.error("finishImage failed", e);
+        }
+        if (opts.signal.aborted) throw new AbortedError();
+      }
+      update({ stage: "done", recipe: output.recipe, image, output, firedImage });
       return p;
     }
     // v5 の画像 (背景つき) をそのまま渡す。深度で切り抜いた透過画像は渡さない

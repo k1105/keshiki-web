@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import CaptureDebugger from "@/components/CaptureDebugger";
 import CloseButton from "@/components/CloseButton";
 import ColorWheel from "@/components/ColorWheel";
@@ -11,7 +11,7 @@ import ProfileSketcher from "@/components/ProfileSketcher";
 import VesselCanvas from "@/components/VesselCanvas";
 import { clayByKey, type ClayKey } from "@/lib/clay";
 import { findClosestColor, type GlazeColor } from "@/lib/colors";
-import { defaultCaptureAngle, type CaptureAngle } from "@/lib/depth";
+import { captureZoom, defaultCaptureAngle, type CaptureAngle } from "@/lib/depth";
 import { baseConditionsOf, type Hyomen, type YuseijoA, type YuseijoB } from "@/lib/generate_v5";
 import { loadGlazeIndex, representativeGlazeColor, type GlazeIndex } from "@/lib/glaze-index";
 import { firingCapabilities } from "@/lib/firing-capabilities";
@@ -44,6 +44,8 @@ const DEFAULT_GLOSS = 70;
 
 // 焼成前のプレビューは器を小さめに置き、焼き上がりで大きく見せる
 const PREVIEW_ZOOM = 0.64;
+// FIRE を押してから、構図に着いた知らせ (VesselCanvas onPosed、約 0.9 秒) を待つ上限
+const POSE_TIMEOUT_MS = 2500;
 const ROTATE_SPEED = 1.6;
 
 // 焼成温度の既定 (レシピは DB から選ばれるので、API に送る以外では使わない)
@@ -402,12 +404,29 @@ export default function Home() {
     else setMode(m);
   };
 
-  const startFiring = () => {
+  // FIRE: まず器を深度画像と同じ構図 (向き・俯角・大きさ) に回し、着いてから焼成を始める。
+  // 生成途中の絵と焼き上がりの絵は、その構図のままの器に重なる位置に出る
+  const [posing, setPosing] = useState(false);
+  const startFiring = () => setPosing(true);
+  const beginFiring = useCallback(() => {
+    setPosing(false);
     setFiringProgress(null);
     setFiring(true);
     setFireKey((k) => k + 1);
     setStep(3);
-  };
+  }, []);
+  const canPose = view === "main" && !about && step === 2;
+  useEffect(() => {
+    if (!posing) return;
+    // 回している間に Step 2 を離れたら取りやめる
+    if (!canPose) {
+      setPosing(false);
+      return;
+    }
+    // 構図に着いた知らせが来ないとき (タブが裏にある等) の保険
+    const timer = setTimeout(beginFiring, POSE_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [posing, canPose, beginFiring]);
 
   const canFire =
     mode === "visual" ||
@@ -455,6 +474,8 @@ export default function Home() {
   const showResult = step === 3 && !firing;
   // 焼き上がった器の GLB (焼成中・未生成は null)
   const firedGlb = step >= 3 && !firing ? (firingProgress?.glb ?? null) : null;
+  // 焼き上がった器の絵 (背景を抜いた PNG)。3D を作らないときはこれが焼き上がりの表示になる
+  const firedImage = step >= 3 && !firing ? (firingProgress?.firedImage ?? null) : null;
   // 焼成中に届く途中経過の粒。届くまではローポリのまま (焼成開始で急にリッチにしない)
   const firingPoints = firingNow ? (firingProgress?.points ?? null) : null;
   // 焼成中に届く生成途中の絵 (または焼き上がりの絵)。粒が届いたら粒を優先する
@@ -463,6 +484,11 @@ export default function Home() {
       ? (firingProgress?.preview?.image ?? firingProgress?.image ?? null)
       : null;
   const inKiln = firingNow && firingPoints === null;
+  // 焼成の直前から焼成中は、器を深度画像と同じ構図で止める
+  const pose =
+    posing || firingNow
+      ? { yaw: captureAngle.yaw, pitch: captureAngle.pitch, zoom: captureZoom(captureAngle) }
+      : null;
   const lowPoly = step < 3 || inKiln;
   // 器の 3D プレビューを出す画面。Step 1 でかたちの一覧を出している間は出さない
   const showViewer = inFlow && (step >= 2 || !formOpen);
@@ -753,7 +779,7 @@ export default function Home() {
                   <Arrow dir="left" /> {t.back}
                 </button>
                 <span className="sep">/</span>
-                <button type="button" className="link" disabled={!canFire} onClick={startFiring}>
+                <button type="button" className="link" disabled={!canFire || posing} onClick={startFiring}>
                   {t.fire} <Arrow dir="right" />
                 </button>
               </div>
@@ -793,7 +819,8 @@ export default function Home() {
             </div>
           )}
 
-          {showResult && (
+          {/* 回転ボタンは 3D の器を回すもの。焼き上がりが絵のときは出さない */}
+          {showResult && !firedImage && (
             <>
               <button
                 type="button"
@@ -859,22 +886,29 @@ export default function Home() {
             <div
               className={`panel viewer ${inKiln ? "is-firing" : firingNow ? "" : "finegrid"} ${
                 firingFrame ? "is-hidden" : ""
-              }`}
+              } ${firedImage && firingProgress?.preview ? "is-swap" : ""}`}
             >
-              <VesselCanvas
-                shape={shape}
-                custom={customVessel}
-                texturePath={preview.texturePath}
-                hex={preview.hex}
-                dissolveKey={preview.dissolveKey}
-                gloss={preview.gloss}
-                tone={preview.tone}
-                zoom={lowPoly ? PREVIEW_ZOOM : 1}
-                lowPoly={lowPoly}
-                glb={firedGlb}
-                points={firingPoints}
-                autoRotateSpeed={ROTATE_SPEED * rotateDir}
-              />
+              {firedImage ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img className="fired-image" src={firedImage} alt="" />
+              ) : (
+                <VesselCanvas
+                  shape={shape}
+                  custom={customVessel}
+                  texturePath={preview.texturePath}
+                  hex={preview.hex}
+                  dissolveKey={preview.dissolveKey}
+                  gloss={preview.gloss}
+                  tone={preview.tone}
+                  zoom={lowPoly ? PREVIEW_ZOOM : 1}
+                  lowPoly={lowPoly}
+                  glb={firedGlb}
+                  points={firingPoints}
+                  pose={pose}
+                  onPosed={posing ? beginFiring : undefined}
+                  autoRotateSpeed={ROTATE_SPEED * rotateDir}
+                />
+              )}
             </div>
           )}
         </div>

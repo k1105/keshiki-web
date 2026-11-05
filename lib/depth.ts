@@ -19,10 +19,10 @@ import {
 export const DEPTH_SIZE = 1024;
 // 器のいちばん奥の明るさ (0-1)。背景 0 と区別できるよう底上げする
 const DEPTH_FAR_LEVEL = 0.25;
-// 器の大きさ (既定、全形状共通)。1 で 1024² の枠いっぱい。2026-11-04 に 0.62 → 0.97 に変更
-// (試験用サンプルの object_ratio は 0.2 前後だったが、器を大きく写す方針にした)。
+// 器の大きさ (既定、全形状共通)。1 で 1024² の枠いっぱい。2026-11-04 に 0.62 → 0.97、
+// 2026-11-05 に 0.92 に変更 (試験用サンプルの object_ratio は 0.2 前後だったが、器を大きく写す方針にした)。
 // CaptureAngle.zoom で形ごと・デバッガーから上書きできる
-export const DEPTH_ZOOM = 0.97;
+export const DEPTH_ZOOM = 0.92;
 /** ズームの許容範囲 (デバッガーのスライダーと clamp に使う) */
 export const CAPTURE_ZOOM_RANGE: [number, number] = [0.3, 1.2];
 
