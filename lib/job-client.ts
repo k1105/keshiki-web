@@ -1,6 +1,7 @@
 // RunPod のジョブ (投入 / 状態取得 / キャンセル) を叩く口。
 // 本番は /api/generate (proxy) 経由。疑似応答 (lib/firing-mock.ts) も同じ形で差し替えられる。
 
+import { fetchEndpointHealth, type EndpointHealth } from "./endpoint-health";
 import type { GenerateError, JobStatus } from "./glaze_prompt";
 
 export type JobApi = "v5" | "3d";
@@ -28,6 +29,12 @@ export type JobClient = {
   status(api: JobApi, id: string, signal?: AbortSignal): Promise<StatusResult>;
   /** 投げっぱなし (結果は待たない) */
   cancel(api: JobApi, id: string): void;
+  /**
+   * endpoint の稼働状況 (worker 数)。取れなかったら null。
+   * 順番待ちが続くときに「worker が 1 台もいない」を見分けるのに使う (lib/endpoint-health.ts)。
+   * 無いクライアント (疑似応答) では見張らない
+   */
+  health?(api: JobApi, signal?: AbortSignal): Promise<EndpointHealth | null>;
 };
 
 const query = (api: JobApi) => `?api=${api}`;
@@ -74,4 +81,5 @@ export const liveJobClient: JobClient = {
   cancel(api, id) {
     fetch(`/api/generate/${id}${query(api)}`, { method: "DELETE" }).catch(() => {});
   },
+  health: fetchEndpointHealth,
 };

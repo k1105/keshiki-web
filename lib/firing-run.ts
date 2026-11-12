@@ -11,6 +11,7 @@
 //   firedImage に入れ、done にする (glb は null のまま)。焼き上がりは firedImage を見せる
 // 画面の演出 (温度カウンター・粒の描画など) はこの進捗 (FiringProgress) を見て描く。ここでは描かない。
 
+import { createQueueWatch, NO_WORKERS } from "./endpoint-health";
 import type { FiringCapabilities } from "./firing-capabilities";
 import type { FiringUiState } from "./firing-request";
 import {
@@ -96,6 +97,8 @@ export type RunFiringOptions = {
   signal: AbortSignal;
   /** ポーリング上限を超えたときのメッセージ */
   timeoutMessage: string;
+  /** 生成サーバーに worker が 1 台もいない (待っても始まらない) と分かったときのメッセージ */
+  unavailableMessage: string;
   /**
    * 絵の仕上げ (背景の切り抜き)。生成途中の絵と、3D を作らないときの焼き上がりの絵に使う。
    * 省略時・失敗時は v5 の絵をそのまま使う
@@ -190,6 +193,9 @@ async function runJob(
   const startedAt = Date.now();
   handlers.onQueued();
   let pollFailures = 0;
+  // 順番待ちが続いたら worker がいるかを見る。1 台もいなければ上限 (15 分) まで待たずに失敗にする
+  const health = client.health?.bind(client);
+  const watch = health ? createQueueWatch(() => health(api, signal)) : null;
 
   try {
     for (;;) {
@@ -211,6 +217,11 @@ async function runJob(
       switch (data.status) {
         case "IN_QUEUE":
           handlers.onQueued();
+          if (watch && (await watch.queued())) {
+            if (signal.aborted) throw new AbortedError();
+            client.cancel(api, id);
+            return { failure: { error: NO_WORKERS, message: opts.unavailableMessage } };
+          }
           break;
         case "IN_PROGRESS":
         case "RUNNING":

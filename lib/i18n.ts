@@ -121,6 +121,7 @@ const en = {
   retry3d: "RETRY 3D ONLY",
   fireFailed: "Firing failed",
   fireTimeout: "The kiln did not respond within 15 minutes. Please try again.",
+  serverUnavailable: "The generation server is not running right now. Please try again later.",
   fireConfig: "The generation API is not configured.",
   retry: "RETRY",
 
@@ -263,6 +264,7 @@ const ja: Strings = {
   retry3d: "立体化だけやり直す",
   fireFailed: "焼成に失敗しました",
   fireTimeout: "15 分以内に焼き上がりませんでした。もう一度お試しください",
+  serverUnavailable: "生成サーバーが稼働していません。時間をおいてもう一度お試しください",
   fireConfig: "本番生成 API が未設定です",
   retry: "もう一度焼成する",
 

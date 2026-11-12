@@ -14,15 +14,18 @@
 // 変わって見分けられなくなったら "unknown" を返す (呼び出し側は焼成に進ませず、再確認を促す)。
 // フロントの索引を API 側の ID 一覧で作り直せば、この確認は要らなくなる。
 
+import { createQueueWatch, fetchEndpointHealth } from "./endpoint-health";
 import { GENERATE_V5_QUERY } from "./generate_v5";
 import type { JobStatus } from "./glaze_prompt";
-import { POLL_MS } from "./firing-run";
 
 // 確認 1 件の待ち上限。超えたら "unknown" (画面は「確認できませんでした」を出して再確認を促す)。
 // 焼成 (15 分) と同じだけ待つと、worker の確保待ちの間ずっと FIRE が押せないままになる
 const CHECK_LIMIT_MS = 2 * 60 * 1000;
+// 温まっていれば 1〜3 秒で終わるので、焼成 (1 秒) より細かく見る
+const CHECK_POLL_MS = 500;
 
-export type RecipeIdCheck = "ok" | "missing" | "unknown";
+// "unavailable": 生成サーバーに worker が 1 台もいない (待っても確かめられない。lib/endpoint-health.ts)
+export type RecipeIdCheck = "ok" | "missing" | "unknown" | "unavailable";
 
 type CheckJob = {
   id?: string;
@@ -45,14 +48,18 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
-/** recipe_id が API 側の索引にあるか。確かめられなかったとき (通信失敗・中断・未設定など) は "unknown" */
+/**
+ * recipe_id が API 側の索引にあるか。確かめられなかったとき (通信失敗・中断・未設定など) は "unknown"。
+ * /run で投入して /status を見る (/runsync は worker がいないと 90 秒返らない)。
+ * 順番待ちが続いて worker が 1 台もいないと分かったら "unavailable" (投入から約 20 秒)
+ */
 export async function checkRecipeId(id: string, signal: AbortSignal): Promise<RecipeIdCheck> {
   const cached = known.get(id);
   if (cached) return cached;
 
   let jobId: string | undefined;
   try {
-    const res = await fetch(`/api/generate${GENERATE_V5_QUERY}&sync=1`, {
+    const res = await fetch(`/api/generate${GENERATE_V5_QUERY}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ glaze: { recipe_id: id } }),
@@ -62,15 +69,19 @@ export async function checkRecipeId(id: string, signal: AbortSignal): Promise<Re
     let job = (await res.json()) as CheckJob;
     jobId = job.id;
 
-    // worker の確保待ちが長いと /runsync は終わる前に返るので、続きは /status で待つ
+    const watch = createQueueWatch(() => fetchEndpointHealth("v5", signal));
     const startedAt = Date.now();
     while (job.status === "IN_QUEUE" || job.status === "IN_PROGRESS" || job.status === "RUNNING") {
       if (!jobId || Date.now() - startedAt > CHECK_LIMIT_MS) break;
-      await sleep(POLL_MS, signal);
+      await sleep(CHECK_POLL_MS, signal);
       if (signal.aborted) break;
       const poll = await fetch(`/api/generate/${jobId}${GENERATE_V5_QUERY}`, { signal });
       if (!poll.ok) continue; // proxy の一時的な失敗は次のポーリングに任せる
       job = (await poll.json()) as CheckJob;
+      if (job.status === "IN_QUEUE" && (await watch.queued())) {
+        cancel(jobId);
+        return "unavailable";
+      }
     }
 
     if (job.status === "FAILED") {
@@ -110,7 +121,9 @@ export type FirableRecipe =
   /** 確かめた候補がどれも API 側の索引に無い */
   | { status: "none" }
   /** 確かめられなかった */
-  | { status: "unknown" };
+  | { status: "unknown" }
+  /** 生成サーバーに worker が 1 台もいない */
+  | { status: "unavailable" };
 
 /**
  * 候補の ID を 1 件ずつ確かめて、API 側の索引にある最初の 1 件を返す。
@@ -130,6 +143,7 @@ export async function findFirableRecipe(
     const id = order[k];
     const result = await checkRecipeId(id, signal);
     if (signal.aborted || result === "unknown") return { status: "unknown" };
+    if (result === "unavailable") return { status: "unavailable" };
     if (result === "ok") return { status: "ok", recipeId: id };
   }
   return { status: "none" };

@@ -18,6 +18,7 @@ import {
   type GlazeConditions,
   type GlazeIndex,
 } from "@/lib/glaze-index";
+import { NO_WORKERS } from "@/lib/endpoint-health";
 import { findFirableRecipe } from "@/lib/recipe-check";
 import { firingCapabilities } from "@/lib/firing-capabilities";
 import { STRINGS, type Lang } from "@/lib/i18n";
@@ -202,6 +203,7 @@ export default function Home() {
     | { status: "ok"; recipeId: string; temp: number | null }
     | { status: "none" }
     | { status: "unknown" }
+    | { status: "unavailable" } // 生成サーバーに worker が 1 台もいない
     | null
   >(null);
   // 「もう一度確認する」を押すたびに進めて、確認をやり直す
@@ -212,7 +214,7 @@ export default function Home() {
   const [mood, setMood] = useState("");
   const [moodResult, setMoodResult] = useState<TextSearchOutput | null>(null);
   const [moodIndex, setMoodIndex] = useState(0);
-  const [moodStatus, setMoodStatus] = useState<"idle" | "loading" | "error">("idle");
+  const [moodStatus, setMoodStatus] = useState<"idle" | "loading" | "error" | "unavailable">("idle");
   const [moodError, setMoodError] = useState<string | null>(null);
   const moodAbort = useRef<AbortController | null>(null);
 
@@ -359,6 +361,11 @@ export default function Home() {
       setMoodStatus("idle");
     } catch (e) {
       if (controller.signal.aborted) return;
+      // 生成サーバーに worker が 1 台もいない (lib/endpoint-health.ts)。「見つからなかった」とは別に知らせる
+      if (typeof e === "object" && e && (e as { error?: string }).error === NO_WORKERS) {
+        setMoodStatus("unavailable");
+        return;
+      }
       const msg =
         typeof e === "object" && e && "message" in e ? (e as { message?: string }).message : undefined;
       setMoodError(msg ?? null);
@@ -663,9 +670,11 @@ export default function Home() {
                       {glazeCheck?.status === "none" && (
                         <div className="sub-hint is-warn">{t.glazeUnavailable}</div>
                       )}
-                      {glazeCheck?.status === "unknown" && (
+                      {(glazeCheck?.status === "unknown" || glazeCheck?.status === "unavailable") && (
                         <>
-                          <div className="sub-hint is-warn">{t.glazeCheckFailed}</div>
+                          <div className="sub-hint is-warn">
+                            {glazeCheck.status === "unavailable" ? t.serverUnavailable : t.glazeCheckFailed}
+                          </div>
                           <button
                             type="button"
                             className="glaze-change"
@@ -721,6 +730,9 @@ export default function Home() {
                         </button>
                       )}
                       {moodStatus === "loading" && <div className="sub-hint">{t.moodSearching}</div>}
+                      {moodStatus === "unavailable" && (
+                        <div className="sub-hint is-warn">{t.serverUnavailable}</div>
+                      )}
                       {moodStatus === "error" && (
                         <div className="sub-hint is-warn">
                           {t.moodFailed}

@@ -436,6 +436,7 @@ export default function FiringPanel({
           caps,
           signal: controller.signal,
           timeoutMessage: t.fireTimeout,
+          unavailableMessage: t.serverUnavailable,
           onProgress: publish,
           // 途中の絵も焼き上がりの絵も、送った深度画像で背景を抜いてから見せる
           finishImage: createDepthCutter(depthPng),
