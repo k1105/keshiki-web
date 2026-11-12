@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { additivesForColor } from "@/lib/recipe";
-import { SEGER_ROWS, type FiringUiState } from "@/lib/firing-request";
+import type { FiringUiState } from "@/lib/firing-request";
 import { createDepthCutter } from "@/lib/cutout";
 import { DEFAULT_CAPTURE_ANGLE, renderVesselDepthPng, type CaptureAngle } from "@/lib/depth";
 import { firingCapabilities } from "@/lib/firing-capabilities";
@@ -22,8 +21,9 @@ import {
   type SegerV5,
 } from "@/lib/generate_v5";
 import { loadGlazeIndex, pickGlazeRecipe } from "@/lib/glaze-index";
+import { glazeStyleByCode } from "@/lib/glaze-styles";
 import { liveJobClient } from "@/lib/job-client";
-import type { Strings } from "@/lib/i18n";
+import { STRINGS, type Strings } from "@/lib/i18n";
 import { preloadVesselModel } from "@/lib/vessel-models";
 import type { CustomVessel, VesselShape } from "@/lib/vessels";
 
@@ -43,14 +43,20 @@ export type FiringPanelProps = {
   onGeneratingChange: (generating: boolean) => void;
   /** 焼成の進捗 (温度・途中の絵・粒・GLB)。焼き上がった器の表示と演出はこれを見て描く */
   onProgress?: (progress: FiringProgress | null) => void;
+  /** 失敗のモーダルで「戻る」を押した (Step 2 に戻して選び直せるようにする) */
+  onBack: () => void;
 };
 
 const SETTLED: FiringStage[] = ["done", "failed", "config"];
 
 // 温度カウンター: 焼成開始から TEMP_RISE_MS かけて 0 → 焼成温度 (DB) まで上がる。
-// レシピ (温度) は約 1 秒で届くので、届くまでは FALLBACK_TEMP に向けて上がり始める
+// 釉薬から選ぶ / 感覚でつくる は焼くレシピが先に決まっているので、最初からその温度を目標にする。
+// 外観を選ぶ はレシピが届くまで目標が分からない (窯の順番待ちが長いと 30 秒を超える) ので、
+// 届くまでは PROVISIONAL_TEMP に向けて上げ、届いたら本来の温度に向かう。
+// 仮の目標は DB のほとんどのレシピより低くしておく (1280℃ を仮の目標にしていたときは、
+// 1060℃ のレシピでも一度 1280℃ まで表示されてしまった)
 const TEMP_RISE_MS = 30_000;
-const FALLBACK_TEMP = 1280;
+const PROVISIONAL_TEMP = 1000;
 
 // ゼーゲル式の表示名 (DB の key → 下付き文字)
 const SEGER_LABEL: Record<keyof SegerV5, string> = {
@@ -72,7 +78,7 @@ const SEGER_ORDER = Object.keys(SEGER_LABEL) as (keyof SegerV5)[];
 function TempCounter({ target, startedAt }: { target: number | null; startedAt: number }) {
   const ref = useRef<HTMLSpanElement>(null);
   useEffect(() => {
-    const goal = target ?? FALLBACK_TEMP;
+    const goal = target ?? PROVISIONAL_TEMP;
     let raf = 0;
     const tick = () => {
       const f = Math.min(1, (Date.now() - startedAt) / TEMP_RISE_MS);
@@ -239,40 +245,80 @@ function DbRecipe({ recipe }: { recipe: RecipeV5 }) {
   );
 }
 
-/** レシピが取れなかったとき (API 未設定・失敗) の概算表示 */
-function EstimateRecipe({ ui }: { ui: FiringUiState }) {
-  const additives = ui.glaze
-    ? additivesForColor(ui.glaze.hsl)
-    : [{ key: "無添加 (透明釉ベース)", val: "-" }];
+// 結果画面の「選択した条件」。まわりのレシピ本文と同じく日本語表記で固定する
+const MODE_LABEL: Record<FiringUiState["mode"], string> = {
+  visual: STRINGS.ja.appearance,
+  style: STRINGS.ja.glazeHeading,
+  mood: STRINGS.ja.inspiration,
+};
+// v5 が条件を外したとき (recipe.relaxed) のキー → 表示名
+const RELAXED_LABEL: Record<string, string> = {
+  hyomen: "表面",
+  yuseijo_a: "透明度",
+  yuseijo_b: "質感",
+  soji: "素地",
+  shosei: "焼成雰囲気",
+};
+
+function shapeLabel(shape: VesselShape): string {
+  const shapes = STRINGS.ja.shapes as Record<string, string>;
+  return shape === "custom" ? shapes.wheel : (shapes[shape] ?? shape);
+}
+
+/** 自分が選んだ条件・入力した言葉 (焼き上がったレシピと見比べられるようにする) */
+function SelectedConditions({
+  ui,
+  shape,
+  relaxed,
+}: {
+  ui: FiringUiState;
+  shape: VesselShape;
+  relaxed: string[];
+}) {
+  const glazeNames = ui.glazeCodes.map((code) => glazeStyleByCode(code)?.ja ?? code).join("、");
   return (
-    <>
-      <div className="recipe-block">
-        <div className="rb-ttl">基礎釉（概算）</div>
-        <div className="recipe-row"><span className="key">- 長石</span><span className="val">40</span></div>
-        <div className="recipe-row"><span className="key">- 石灰石</span><span className="val">15</span></div>
-        <div className="recipe-row"><span className="key">- 珪石</span><span className="val">25</span></div>
-        <div className="recipe-row"><span className="key">- カオリン</span><span className="val">10</span></div>
-        <div className="recipe-row"><span className="key">- フリット</span><span className="val">10</span></div>
+    <div className="recipe-block recipe-block-wide">
+      <div className="rb-ttl">選択した条件</div>
+      <div className="recipe-row">
+        <span className="key">- かたち</span>
+        <span className="val">{shapeLabel(shape)}</span>
       </div>
-      <div className="recipe-block">
-        <div className="rb-ttl">ゼーゲル式（概算）</div>
-        {SEGER_ROWS.map((row) => (
-          <div className="recipe-row" key={row.idx}>
-            <span className="key">{row.label}</span>
-            <span className="val">{row.mol.toFixed(2)}</span>
-          </div>
-        ))}
+      <div className="recipe-row">
+        <span className="key">- 選び方</span>
+        <span className="val">{MODE_LABEL[ui.mode]}</span>
       </div>
-      <div className="recipe-block recipe-block-wide">
-        <div className="rb-ttl">添加物（概算）</div>
-        {additives.map((a) => (
-          <div className="recipe-row" key={a.key}>
-            <span className="key">- {a.key}</span>
-            <span className="val">{a.val}</span>
-          </div>
-        ))}
-      </div>
-    </>
+      {ui.mode === "visual" && (
+        <>
+          {ui.glaze && (
+            <div className="recipe-row">
+              <span className="key">- 色</span>
+              <span className="val">
+                <span className="glaze-combo-swatch" style={{ background: ui.glaze.hex }} />
+                {ui.glaze.hex}
+              </span>
+            </div>
+          )}
+        </>
+      )}
+      {ui.mode === "style" && (
+        <div className="recipe-row">
+          <span className="key">- 釉薬</span>
+          <span className="val">{glazeNames || "-"}</span>
+        </div>
+      )}
+      {ui.mode === "mood" && (
+        <div className="recipe-row">
+          <span className="key">- 言葉</span>
+          <span className="val recipe-words">{ui.mood.trim() || "-"}</span>
+        </div>
+      )}
+      {relaxed.length > 0 && (
+        <div className="recipe-text">
+          ※ 一致するデータが無かったため、次の条件は外して選んでいます:{" "}
+          {relaxed.map((k) => RELAXED_LABEL[k] ?? k).join("、")}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -286,6 +332,7 @@ export default function FiringPanel({
   t,
   onGeneratingChange,
   onProgress,
+  onBack,
 }: FiringPanelProps) {
   const [progress, setProgress] = useState<FiringProgress>(() => initialProgress());
   const [retryKey, setRetryKey] = useState(0);
@@ -351,11 +398,14 @@ export default function FiringPanel({
         return;
       }
 
-      // 釉薬から選んだときは、条件と選択した釉名称に合う実在レシピを索引から 1 件選んで焼く。
-      // 索引が読めない・見つからないときは条件検索 (buildGlazeV5) に落とす
+      // 釉薬から選んだときは、条件と選択した釉名称に合う実在レシピで焼く。
+      // 組み合わせの確定時に API 側の索引にあると確かめたレシピ (glazeRecipeId) があればそれを使い、
+      // 無ければ索引から 1 件選ぶ。索引が読めない・見つからないときは条件検索 (buildGlazeV5) に落とす
       const startUi = uiRef.current;
       let recipeId: string | undefined;
-      if (startUi.mode === "style" && startUi.glazeCodes.length > 0) {
+      if (startUi.mode === "style" && startUi.glazeRecipeId) {
+        recipeId = startUi.glazeRecipeId;
+      } else if (startUi.mode === "style" && startUi.glazeCodes.length > 0) {
         try {
           const index = await loadGlazeIndex();
           const picked = pickGlazeRecipe(
@@ -436,38 +486,50 @@ export default function FiringPanel({
         <PreviewFrames src={frame} frameKey={frameKey} />
         <div className="firing-label" role="status">
           <div className="firing-title">{t.firing}</div>
-          <TempCounter target={recipe?.temp ?? null} startedAt={progress.startedAt} />
+          <TempCounter
+            target={recipe?.temp ?? uiRef.current.recipeTemp ?? null}
+            startedAt={progress.startedAt}
+          />
           <FiringSteps progress={progress} model3d={caps.model3d} title={t.phases[phase]} />
+          {/* 今どの段階で待っているか (窯の順番待ちは数分かかることがあり、無表示だと止まって見える) */}
+          <div className="firing-phase">{t.phases[phase]}</div>
         </div>
       </>
+    );
+  }
+
+  // 失敗・API 未設定: 焼き上がりの画面 (器のビューとレシピ) には進まず、画面中央のモーダルで知らせる。
+  // 「もう一度焼成する」でやり直すか、「戻る」で Step 2 に戻って選び直す
+  if (phase === "failed" || phase === "config") {
+    const title = phase === "config" ? t.fireConfig : t.fireFailed;
+    return (
+      <div className="modal-backdrop">
+        <div className="error-modal" role="alertdialog" aria-modal="true" aria-label={title}>
+          <div className="error-modal-title">{title}</div>
+          {phase === "failed" && error && (
+            <div className="error-modal-message">
+              {error.error}
+              {error.message ? `\n${error.message}` : ""}
+            </div>
+          )}
+          <div className="error-modal-foot">
+            <button type="button" className="link" onClick={onBack}>
+              {t.back}
+            </button>
+            {phase === "failed" && (
+              <button type="button" className="link" onClick={() => setRetryKey((k) => k + 1)}>
+                {canRetry3d ? t.retry3d : t.retry}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
     );
   }
 
   return (
     <div className="recipe">
       <div className="recipe-title">{t.suggestedRecipe}</div>
-
-      {(phase === "failed" || phase === "config") && (
-        <div className="recipe-notice">
-          <div className="recipe-notice-title">
-            {phase === "config"
-              ? t.fireConfig
-              : `${t.fireFailed}${error ? `: ${error.error}` : ""}`}
-          </div>
-          {phase === "failed" && error?.message && (
-            <div className="recipe-notice-message">{error.message}</div>
-          )}
-          {phase === "failed" && (
-            <button
-              type="button"
-              className="link"
-              onClick={() => setRetryKey((k) => k + 1)}
-            >
-              {canRetry3d ? t.retry3d : t.retry}
-            </button>
-          )}
-        </div>
-      )}
 
       {colorFar && (
         <div className="recipe-notice">
@@ -477,27 +539,29 @@ export default function FiringPanel({
 
       {/* レシピ本文はデザインに合わせて言語切替に関わらず日本語表記。中身は DB の実在レシピ */}
       <div className="recipe-body">
-        {recipe ? <DbRecipe recipe={recipe} /> : <EstimateRecipe ui={ui} />}
+        {recipe && <DbRecipe recipe={recipe} />}
 
         <div className="recipe-block recipe-block-wide">
           <div className="rb-ttl">焼成条件</div>
           <div className="recipe-row">
             <span className="key">- 素地</span>
             <span className="val">
-              {recipe ? SOJI_LABEL[recipe.soji] : ui.clay}
+              {recipe ? SOJI_LABEL[recipe.soji] : (ui.clay ?? "-")}
             </span>
           </div>
           <div className="recipe-row">
             <span className="key">- 焼成温度</span>
-            <span className="val">{recipe ? recipe.temp : ui.temp}°C</span>
+            <span className="val">{recipe ? `${recipe.temp}°C` : "-"}</span>
           </div>
           <div className="recipe-row">
             <span className="key">- 焼成雰囲気</span>
             <span className="val">
-              {recipe ? `${SHOSEI_LABEL[recipe.shosei]}焼成` : ui.atmosphere}
+              {recipe ? `${SHOSEI_LABEL[recipe.shosei]}焼成` : (ui.atmosphere ?? "-")}
             </span>
           </div>
         </div>
+
+        <SelectedConditions ui={ui} shape={shape} relaxed={recipe?.relaxed ?? []} />
       </div>
 
       <div className="recipe-note">{t.disclaimer}</div>

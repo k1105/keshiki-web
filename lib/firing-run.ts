@@ -106,6 +106,8 @@ export type RunFiringOptions = {
 export const POLL_MS = 1000; // progress 仕様書: 途中経過は上書きなので 1 秒間隔
 // v5: GPU 確保待ちを取りこぼさないよう 15 分。3D: 確保待ちが十数分になることがあるので同じく 15 分
 export const POLL_LIMIT_MS = 15 * 60 * 1000;
+// /status の取得がこの回数続けて失敗したら焼成失敗にする (約 1 分。上限の 15 分まで無表示で待たせない)
+const MAX_POLL_FAILURES = 60;
 
 export function initialProgress(startedAt = Date.now()): FiringProgress {
   return {
@@ -187,6 +189,7 @@ async function runJob(
   const id = submitted.id;
   const startedAt = Date.now();
   handlers.onQueued();
+  let pollFailures = 0;
 
   try {
     for (;;) {
@@ -198,11 +201,12 @@ async function runJob(
       const res = await client.status(api, id, signal);
       if (signal.aborted) throw new AbortedError();
       if (!res.ok) {
-        // proxy / ネットワークの一時的な失敗は次のポーリングに任せる (上限は startedAt で見る)
-        if (res.status === 0 || res.status >= 500) continue;
+        // proxy / ネットワークの一時的な失敗は次のポーリングに任せる。続いたら失敗にする
+        if ((res.status === 0 || res.status >= 500) && ++pollFailures < MAX_POLL_FAILURES) continue;
         client.cancel(api, id);
         return { failure: res.error };
       }
+      pollFailures = 0;
       const data = res.data;
       switch (data.status) {
         case "IN_QUEUE":

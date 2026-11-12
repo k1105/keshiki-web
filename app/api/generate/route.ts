@@ -9,6 +9,7 @@ import {
   configMissingResponse,
   parseRunpodApi,
   runpodConfig,
+  upstreamStatus,
 } from "@/lib/runpod";
 
 export async function POST(request: Request) {
@@ -28,7 +29,7 @@ export async function POST(request: Request) {
     if (!res.ok) {
       return Response.json(
         { error: "pod_api_error", message: await res.text() },
-        { status: 502 }
+        { status: upstreamStatus(res.status) }
       );
     }
     const data = await res.json();

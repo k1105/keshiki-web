@@ -81,13 +81,18 @@ const en = {
   glazeModalTitle: "GLAZE",
   glazeCandidates: "Combinations in the database",
   glazeCandidatesNear: "No combination contains all of your picks. Closest ones:",
-  glazeCandidatesEmpty: "No combination with these glazes for this clay and atmosphere.",
+  glazeCandidatesEmpty: "No combination contains these glazes.",
   glazeCount: (n: number) => `${n} ${n === 1 ? "recipe" : "recipes"}`,
   glazeMore: (n: number) => `${n} more. Pick more glazes to narrow down.`,
   glazeConfirm: "CONFIRM",
   glazeClear: "CLEAR",
   glazeClose: "CLOSE",
   glazeLoading: "Loading the database...",
+  glazeChecking: "Checking that this glaze can be fired...",
+  glazeUnavailable: "This combination cannot be fired right now. Please choose another one.",
+  glazeCheckFailed: "Could not check whether this glaze can be fired.",
+  glazeRecheck: "Check again",
+  moodCandidates: "Closest glazes. Choose one.",
   moodPlaceholder:
     "Describe the glaze you have in mind. e.g. A forest after rain, quiet and a little damp.",
   moodConfirm: "CONFIRM",
@@ -116,14 +121,13 @@ const en = {
   retry3d: "RETRY 3D ONLY",
   fireFailed: "Firing failed",
   fireTimeout: "The kiln did not respond within 15 minutes. Please try again.",
-  fireConfig:
-    "The generation API is not configured. Showing the selected glaze as a flat color.",
+  fireConfig: "The generation API is not configured.",
   retry: "RETRY",
 
   suggestedRecipe: "Estimated Recipe",
   disclaimer:
     "A reference recipe close to the generated result. It does not guarantee actual firing results.",
-  colorFar: "No glaze close to this color exists for this clay and atmosphere. Showing the nearest one.",
+  colorFar: "No glaze close to this color exists in the database. Showing the nearest one.",
   rotateLeft: "Rotate left",
   rotateRight: "Rotate right",
 
@@ -219,13 +223,18 @@ const ja: Strings = {
   glazeModalTitle: "釉薬",
   glazeCandidates: "データベースにある組み合わせ",
   glazeCandidatesNear: "選んだ釉薬をすべて含む組み合わせはありません。近いもの:",
-  glazeCandidatesEmpty: "この素地・焼成雰囲気では、選んだ釉薬を含む組み合わせがありません",
+  glazeCandidatesEmpty: "選んだ釉薬を含む組み合わせがありません",
   glazeCount: (n: number) => `${n}件`,
   glazeMore: (n: number) => `ほか${n}件。釉薬を追加で選ぶと絞り込めます`,
   glazeConfirm: "決定",
   glazeClear: "クリア",
   glazeClose: "閉じる",
   glazeLoading: "データベースを読み込み中...",
+  glazeChecking: "焼成できるか確認中...",
+  glazeUnavailable: "この組み合わせは今は焼成できません。別の組み合わせを選んでください",
+  glazeCheckFailed: "焼成できるか確認できませんでした",
+  glazeRecheck: "もう一度確認する",
+  moodCandidates: "近い釉薬の候補 (選べます)",
   moodPlaceholder:
     "つくりたい釉薬のイメージを書いてください。ex. 雨上がりの森みたいな、静かで少し湿った感じ。",
   moodConfirm: "CONFIRM",
@@ -254,14 +263,13 @@ const ja: Strings = {
   retry3d: "立体化だけやり直す",
   fireFailed: "焼成に失敗しました",
   fireTimeout: "15 分以内に焼き上がりませんでした。もう一度お試しください",
-  fireConfig:
-    "本番生成 API が未設定のため、選択中の釉薬色を単色で表示しています",
+  fireConfig: "本番生成 API が未設定です",
   retry: "もう一度焼成する",
 
   suggestedRecipe: "推定レシピ",
   disclaimer:
     "生成結果に近い参考レシピです。実際の焼成結果を保証するものではありません。",
-  colorFar: "この素地と焼成の組み合わせには近い色の釉薬がありません。いちばん近いものを表示しています",
+  colorFar: "この色に近い釉薬がデータベースにありません。いちばん近いものを表示しています",
   rotateLeft: "左に回す",
   rotateRight: "右に回す",
 

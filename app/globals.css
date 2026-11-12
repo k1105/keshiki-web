@@ -693,6 +693,14 @@ button.h:hover,
   background: rgba(255, 255, 255, 0.22);
 }
 .firing-step.is-done { background: #fff; }
+/* 進捗の下に出す、今の段階の説明 (順番待ち・焼成中 など) */
+.firing-phase {
+  margin-top: calc(var(--px) * 12);
+  font-family: var(--font-text);
+  font-size: calc(var(--px) * 13);
+  line-height: calc(var(--px) * 20);
+  opacity: 0.75;
+}
 .firing-step.is-now { animation: stepBlink 1.2s steps(2, jump-none) infinite; }
 @keyframes stepBlink {
   from { background: rgba(255, 255, 255, 0.22); }
@@ -1101,6 +1109,44 @@ button.h:hover,
   letter-spacing: 0.08em;
 }
 .glaze-change:hover { color: var(--pink); }
+/* 感覚でつくる: 近い釉薬の候補 (行の見た目は釉薬モーダルの候補 .glaze-cand と同じ) */
+.mood-cands { margin-top: calc(var(--px) * 10); }
+/* 結果画面「選択した条件」の入力した言葉 (長い文は折り返す) */
+.recipe-words { white-space: pre-wrap; word-break: break-word; }
+
+/* ---------- 焼成失敗のモーダル (Step 3) ---------- */
+.error-modal {
+  width: calc(var(--px) * 560);
+  padding: calc(var(--px) * 36) calc(var(--px) * 48) calc(var(--px) * 30);
+  background: rgba(255, 255, 255, 0.97);
+  outline: 1px solid rgba(255, 255, 255, 0.9);
+  box-shadow: 0 calc(var(--px) * 12) calc(var(--px) * 48) rgba(56, 32, 75, 0.25);
+}
+.error-modal-title {
+  font-size: calc(var(--px) * 24);
+  font-weight: 500;
+  line-height: calc(var(--px) * 32);
+  letter-spacing: 0.08em;
+  color: var(--pink);
+}
+.error-modal-message {
+  margin-top: calc(var(--px) * 14);
+  max-height: calc(var(--px) * 160);
+  overflow-y: auto;
+  font-family: var(--font-text);
+  font-size: calc(var(--px) * 13);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.error-modal-foot {
+  display: flex;
+  justify-content: space-between;
+  margin-top: calc(var(--px) * 26);
+  font-size: calc(var(--px) * 22);
+  font-weight: 500;
+  letter-spacing: 0.12em;
+}
 
 /* ---------- 一筆描きモーダル (Step 1) ---------- */
 .sketch-modal {

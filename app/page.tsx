@@ -9,11 +9,16 @@ import type { FiringProgress } from "@/lib/firing-run";
 import GlazePicker, { glazeComboLabel } from "@/components/GlazePicker";
 import ProfileSketcher from "@/components/ProfileSketcher";
 import VesselCanvas from "@/components/VesselCanvas";
-import { clayByKey, type ClayKey } from "@/lib/clay";
 import { findClosestColor, type GlazeColor } from "@/lib/colors";
 import { captureZoom, defaultCaptureAngle, type CaptureAngle } from "@/lib/depth";
-import { baseConditionsOf, type Hyomen, type YuseijoA, type YuseijoB } from "@/lib/generate_v5";
-import { loadGlazeIndex, representativeGlazeColor, type GlazeIndex } from "@/lib/glaze-index";
+import {
+  findGlazeRecipes,
+  loadGlazeIndex,
+  representativeGlazeColor,
+  type GlazeConditions,
+  type GlazeIndex,
+} from "@/lib/glaze-index";
+import { findFirableRecipe } from "@/lib/recipe-check";
 import { firingCapabilities } from "@/lib/firing-capabilities";
 import { STRINGS, type Lang } from "@/lib/i18n";
 import {
@@ -30,16 +35,8 @@ import {
   type VesselShape,
 } from "@/lib/vessels";
 
-// 素地プレビュー（素焼き）の質感。釉薬なしなのでマットに固定
-const CLAY_GLOSS = 6;
-const CLAY_TONE = 50;
-// 釉薬プレビューの色の濃さと、表面状態ごとの光沢
+// 釉薬プレビューの色の濃さと光沢
 const GLAZE_TONE = 60;
-const GLAZE_GLOSS: Record<Hyomen, number> = {
-  HyomenKotaku: 85,
-  HyomenHanKotaku: 50,
-  HyomenTsuyakeshi: 12,
-};
 const DEFAULT_GLOSS = 70;
 
 // 焼成前のプレビューは器を小さめに置き、焼き上がりで大きく見せる
@@ -51,19 +48,10 @@ const ROTATE_SPEED = 1.6;
 // 焼成温度の既定 (レシピは DB から選ばれるので、API に送る以外では使わない)
 const DEFAULT_TEMP = 1230;
 
-const HYOMEN_OPTIONS: Hyomen[] = ["HyomenKotaku", "HyomenHanKotaku", "HyomenTsuyakeshi"];
-const YUSEIJO_A_OPTIONS: YuseijoA[] = [
-  "YuseijoAMushokuTomei",
-  "YuseijoAYusyokuTomei",
-  "YuseijoAMFutoumei",
-];
-const YUSEIJO_B_OPTIONS: YuseijoB[] = [
-  "YuseijoBKinitsu",
-  "YuseijoBFukinnitsu",
-  "YuseijoBKessho",
-  "YuseijoBKannyu",
-  "YuseijoBLuster",
-];
+// 素地・焼成雰囲気は選ばない (2026-11-12)。釉薬の索引は条件で絞り込まずに引く
+const NO_CONDITIONS: GlazeConditions = {};
+// 感覚でつくる: 自由探索で受け取る候補の数
+const MOOD_CANDIDATES = 5;
 
 type CellKey =
   "vase" | "haniwa" | "plate" | "handbag" | "teapot" | "flower" | "mug" | "cat" | "surprise";
@@ -87,12 +75,8 @@ const FORM_CELLS: { key: CellKey; shape?: ShapeKey | ModelShapeKey }[] = [
   { key: "surprise" },
 ];
 
-// 素地ごとのサムネイル (public/shapes/<dir>/<cell>.jpg)
-const CLAY_ORDER: { key: ClayKey; dir: string }[] = [
-  { key: "stoneware-white", dir: "white" },
-  { key: "stoneware-red", dir: "red" },
-  { key: "porcelain", dir: "porcelain" },
-];
+// 素地は選ばないので、かたちのサムネイルは白土で固定する
+const SHAPE_THUMB_DIR = "white"; // public/shapes/<dir>/<cell>.jpg
 
 type Mode = "visual" | "style" | "mood";
 const MODES: Mode[] = ["visual", "style", "mood"];
@@ -179,39 +163,6 @@ function SketchModal({
   );
 }
 
-/** チェックボックス風の選択肢 (単一選択)。見出しは付けず、中央パネル下部に 1 行ずつ並べる */
-function OptionRow<T extends string>({
-  groupLabel,
-  options,
-  selected,
-  label,
-  onSelect,
-}: {
-  groupLabel: string;
-  options: T[];
-  selected: T;
-  label: (v: T) => string;
-  onSelect: (v: T) => void;
-}) {
-  return (
-    <div className="opt-row" role="radiogroup" aria-label={groupLabel}>
-      {options.map((v) => (
-        <button
-          key={v}
-          type="button"
-          role="radio"
-          aria-checked={selected === v}
-          className={`opt ${selected === v ? "active" : ""}`}
-          onClick={() => onSelect(v)}
-        >
-          <span className="opt-box" aria-hidden="true" />
-          {label(v)}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 export default function Home() {
   const [lang, setLang] = useState<Lang>("ja");
   const t = STRINGS[lang];
@@ -220,13 +171,11 @@ export default function Home() {
 
   const [step, setStep] = useState(1);
 
-  // Step 1: かたち → 素地 → 焼成雰囲気 の順に選ぶ。選び終えた項目の次だけが有効になる。
-  // かたちは中央のパネル (9 マス) で選び、選ぶと中央は器のプレビューに替わる。
-  // 「かたち」見出しを押すと 9 マスに戻れる。一筆描きはモーダルで描く
-  const [formOpen, setFormOpen] = useState(true);
+  // Step 1: かたちだけを選ぶ (素地・焼成雰囲気は選ばず、選ばれたレシピのものを結果に表示する)。
+  // かたちは中央のパネル (9 マス) で選ぶ。マスを押しただけでは選択 (ハイライト) で、
+  // NEXT を押してはじめて決定になり Step 2 に進む (選ぶまで NEXT は押せない)。
+  // 一筆描きはモーダルで描く
   const [shapeChosen, setShapeChosen] = useState(false);
-  const [clayChosen, setClayChosen] = useState(false);
-  const [atmosphereChosen, setAtmosphereChosen] = useState(false);
   const [sketchOpen, setSketchOpen] = useState(false);
 
   const [shape, setShape] = useState<VesselShape>("vase");
@@ -237,9 +186,7 @@ export default function Home() {
   // Step 2: 3 方式のどれを開いているか。最初から「見た目」が開いている。
   // 釉薬から選ぶ / 感覚でつくる は順番に選ぶ項目ではなく、同じ釉薬を別の選び方で決めるための入口
   const [mode, setMode] = useState<Mode | null>("visual");
-  const [hyomen, setHyomen] = useState<Hyomen>("HyomenKotaku");
-  const [yuseijoA, setYuseijoA] = useState<YuseijoA>("YuseijoAYusyokuTomei");
-  const [yuseijoB, setYuseijoB] = useState<YuseijoB>("YuseijoBKinitsu");
+  // 外観を選ぶ は色だけで選ぶ (表面・透明度・質感の選択肢は外した、2026-11-12)
   // 釉薬から選ぶ: 気になる釉薬 (glazePicks) はモーダルで自由に選び、
   // それを含む実在の組み合わせの候補から 1 つ確定したものが glazeCombo。
   // 焼成に使うのは常に glazeCombo (= データベースに実在する組み合わせ)
@@ -247,18 +194,27 @@ export default function Home() {
   const [glazeCombo, setGlazeCombo] = useState<string[] | null>(null);
   const [glazeModal, setGlazeModal] = useState(false);
   const [glazeIndex, setGlazeIndex] = useState<GlazeIndex | null>(null);
+  // 確定した組み合わせで焼く実在レシピが API 側の索引にあるかの確認 (lib/recipe-check.ts)。
+  // ok になるまで FIRE は押せない。unknown は確かめられなかった (通信失敗・時間切れ) で、再確認を促す。
+  // null は確認の対象外 (組み合わせが未確定、または疑似応答)
+  const [glazeCheck, setGlazeCheck] = useState<
+    | { status: "checking" }
+    | { status: "ok"; recipeId: string; temp: number | null }
+    | { status: "none" }
+    | { status: "unknown" }
+    | null
+  >(null);
+  // 「もう一度確認する」を押すたびに進めて、確認をやり直す
+  const [glazeCheckKey, setGlazeCheckKey] = useState(0);
   // 感覚でつくる: 文を書いて CONFIRM を押すと自由探索 (text_search) に投げ、
-  // 返ってきた実在レシピ (moodResult) が揃ってはじめて焼成に進める。文を変えたら確定は無効になる
+  // 返ってきた実在レシピの候補 (moodResult) が揃ってはじめて焼成に進める。文を変えたら確定は無効になる。
+  // 候補は近い順に並び、最初は 1 件目が選ばれている (moodIndex)
   const [mood, setMood] = useState("");
   const [moodResult, setMoodResult] = useState<TextSearchOutput | null>(null);
+  const [moodIndex, setMoodIndex] = useState(0);
   const [moodStatus, setMoodStatus] = useState<"idle" | "loading" | "error">("idle");
   const [moodError, setMoodError] = useState<string | null>(null);
   const moodAbort = useRef<AbortController | null>(null);
-
-  const [clayKey, setClayKey] = useState<ClayKey>("stoneware-white");
-  const clay = clayByKey(clayKey);
-  const clayDir = CLAY_ORDER.find((c) => c.key === clayKey)?.dir ?? CLAY_ORDER[0].dir;
-  const [atmosphere, setAtmosphere] = useState("酸化焼成");
 
   // 焼成: FIRE を押すたびに fireKey を進めて Step 3 で生成を走らせる
   const [fireKey, setFireKey] = useState(0);
@@ -294,19 +250,46 @@ export default function Home() {
     };
   }, [mode, glazeIndex]);
 
-  const baseConditions = useMemo(
-    () => baseConditionsOf({ clay: clay.name, atmosphere }),
-    [clay.name, atmosphere]
-  );
   // 釉薬から選んでいるとき、確定した組み合わせの実データの代表色 (DB のマンセル値由来)。
   // 無ければ色相環で選んだ色のまま
   const styleHex = useMemo(
     () =>
       glazeIndex && glazeCombo
-        ? representativeGlazeColor(glazeIndex, baseConditions, glazeCombo)
+        ? representativeGlazeColor(glazeIndex, NO_CONDITIONS, glazeCombo)
         : null,
-    [glazeIndex, baseConditions, glazeCombo]
+    [glazeIndex, glazeCombo]
   );
+
+  // 釉薬の組み合わせを確定したら、焼成に使う実在レシピが API 側の索引にあるかを先に確かめる。
+  // 無い ID は同じ組み合わせの別のレシピに替える。あると確かめられるまで FIRE は押せない
+  // (1 件も無い・確かめられなかった場合も押せない。焼成を待ったあとで失敗させない)
+  useEffect(() => {
+    if (mode !== "style" || !glazeIndex || !glazeCombo || firingCapabilities().mock) {
+      setGlazeCheck(null);
+      return;
+    }
+    const recipes = findGlazeRecipes(glazeIndex, NO_CONDITIONS, glazeCombo);
+    if (recipes.length === 0) {
+      setGlazeCheck({ status: "none" });
+      return;
+    }
+    const controller = new AbortController();
+    setGlazeCheck({ status: "checking" });
+    findFirableRecipe(
+      recipes.map((r) => r.imageId),
+      controller.signal
+    ).then((found) => {
+      if (controller.signal.aborted) return;
+      if (found.status !== "ok") {
+        setGlazeCheck(found);
+        return;
+      }
+      // 焼成温度 (索引にあれば) は温度カウンターの目標に使う
+      const temp = recipes.find((r) => r.imageId === found.recipeId)?.temp ?? 0;
+      setGlazeCheck({ status: "ok", recipeId: found.recipeId, temp: temp > 0 ? temp : null });
+    });
+    return () => controller.abort();
+  }, [mode, glazeIndex, glazeCombo, glazeCheckKey]);
 
   const pickCell = (cell: (typeof FORM_CELLS)[number]) => {
     if (cell.key === "surprise") {
@@ -317,7 +300,6 @@ export default function Home() {
     setSelectedCell(cell.key);
     setShape(cell.shape);
     setShapeChosen(true);
-    setFormOpen(false);
   };
 
   const pickCustomShape = (v: CustomVessel) => {
@@ -325,18 +307,7 @@ export default function Home() {
     setShape("custom");
     setSelectedCell("surprise");
     setShapeChosen(true);
-    setFormOpen(false);
     setSketchOpen(false);
-  };
-
-  const pickClay = (key: ClayKey) => {
-    setClayKey(key);
-    setClayChosen(true);
-  };
-
-  const pickAtmosphere = (v: string) => {
-    setAtmosphere(v);
-    setAtmosphereChosen(true);
   };
 
   const toggleGlazePick = (code: string) => {
@@ -375,7 +346,8 @@ export default function Home() {
     setMoodStatus("loading");
     setMoodError(null);
     setMoodResult(null);
-    const input = buildTextSearchInput(text, { topK: 1, filters: baseConditions });
+    setMoodIndex(0);
+    const input = buildTextSearchInput(text, { topK: MOOD_CANDIDATES });
     const caps = firingCapabilities();
     try {
       const out = caps.mock
@@ -393,7 +365,7 @@ export default function Home() {
       setMoodStatus("error");
     }
   };
-  const moodPick = moodResult?.results[0] ?? null;
+  const moodPick = moodResult?.results[moodIndex] ?? moodResult?.results[0] ?? null;
 
   // Step 2 の 3 つの選び方。開いているもの以外は下に小さく並べる
   const activeMode: Mode = mode ?? "visual";
@@ -428,24 +400,19 @@ export default function Home() {
     return () => clearTimeout(timer);
   }, [posing, canPose, beginFiring]);
 
+  // 釉薬から選ぶ: API 側の索引にあると確かめたレシピがあるときだけ焼ける (疑似応答は確認しないので通す)
   const canFire =
     mode === "visual" ||
-    (mode === "style" && glazeCombo !== null) ||
+    (mode === "style" &&
+      glazeCombo !== null &&
+      (glazeCheck?.status === "ok" || firingCapabilities().mock)) ||
     (mode === "mood" && moodPick !== null);
 
-  // Step 1 では釉薬をかける前の素地を表示し、Step 2 では選択中の釉薬の単色（DB 上の色）を
-  // 即座に器に載せる。テストピース画像はテクスチャとして使わない。
+  // Step 2 では選択中の釉薬の単色（DB 上の色）を即座に器に載せる (Step 1 はかたちの一覧だけで、器は出さない)。
+  // テストピース画像はテクスチャとして使わない。
   // 焼成後 (Step 3 以降) は手続き生成の器の代わりに焼き上がった GLB を表示する
-  const showingClay = step === 1;
-  const preview = showingClay
-    ? {
-        texturePath: null,
-        hex: clay.hex,
-        dissolveKey: `clay:${clay.key}`,
-        gloss: CLAY_GLOSS,
-        tone: CLAY_TONE,
-      }
-    : mode === "style" && styleHex
+  const preview =
+    mode === "style" && styleHex
       ? {
           texturePath: null,
           hex: styleHex,
@@ -465,13 +432,19 @@ export default function Home() {
           texturePath: null,
           hex: glaze?.hex ?? null,
           dissolveKey: `glaze:${glaze?.id ?? "none"}`,
-          gloss: mode === "visual" ? GLAZE_GLOSS[hyomen] : DEFAULT_GLOSS,
+          gloss: DEFAULT_GLOSS,
           tone: GLAZE_TONE,
         };
 
   const inFlow = view === "main" && !about;
   const firingNow = step === 3 && firing;
-  const showResult = step === 3 && !firing;
+  // 焼成が失敗 (または API 未設定) で終わった。FiringPanel が中央にモーダルを出すので、
+  // 焼き上がりの画面 (器のビュー・回転ボタン) は出さない
+  const firingFailed =
+    step === 3 &&
+    !firing &&
+    (firingProgress?.stage === "failed" || firingProgress?.stage === "config");
+  const showResult = step === 3 && !firing && !firingFailed;
   // 焼き上がった器の GLB (焼成中・未生成は null)
   const firedGlb = step >= 3 && !firing ? (firingProgress?.glb ?? null) : null;
   // 焼き上がった器の絵 (背景を抜いた PNG)。3D を作らないときはこれが焼き上がりの表示になる
@@ -491,7 +464,7 @@ export default function Home() {
       : null;
   const lowPoly = step < 3 || inKiln;
   // 器の 3D プレビューを出す画面。Step 1 でかたちの一覧を出している間は出さない
-  const showViewer = inFlow && (step >= 2 || !formOpen);
+  const showViewer = inFlow && step >= 2 && !firingFailed;
 
   const backdropState = view === "title" ? "is-title" : inFlow && firingNow ? "is-firing" : "";
 
@@ -583,7 +556,7 @@ export default function Home() {
 
         {/* 制作フロー。ABOUT / タイトル表示中も状態を保つため、隠すだけでアンマウントしない */}
         <div className="flow" hidden={!inFlow}>
-          {/* Step 1: かたち → 素地 → 焼成雰囲気。前の項目を選ぶまで次はグレーアウト */}
+          {/* Step 1: かたちだけを選ぶ */}
           {step === 1 && (
             <>
               <div className="col">
@@ -592,82 +565,33 @@ export default function Home() {
                   {t.selectBase}
                 </h2>
                 <div className="group is-u1">
-                  <button
-                    type="button"
-                    className={`h ${formOpen ? "active" : ""}`}
-                    onClick={() => setFormOpen(true)}
-                  >
-                    {t.form}
-                  </button>
                   <div className="sub-hint form-hint">{t.formHint}</div>
-                </div>
-                <div className="group is-u2">
-                  <div className={`h ${shapeChosen ? "" : "is-locked"}`}>{t.clayBody}</div>
-                  <div className="items">
-                    {CLAY_ORDER.map((c) => (
-                      <button
-                        key={c.key}
-                        type="button"
-                        className={`item ${clayChosen && clayKey === c.key ? "active" : ""}`}
-                        disabled={!shapeChosen}
-                        onClick={() => pickClay(c.key)}
-                      >
-                        -{t.clays[c.key]}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="group is-u2">
-                  <div className={`h ${clayChosen ? "" : "is-locked"}`}>{t.atmosphere}</div>
-                  <div className="items">
-                    <button
-                      type="button"
-                      className={`item ${
-                        atmosphereChosen && atmosphere === "酸化焼成" ? "active" : ""
-                      }`}
-                      disabled={!clayChosen}
-                      onClick={() => pickAtmosphere("酸化焼成")}
-                    >
-                      -{t.oxidation}
-                    </button>
-                    <button
-                      type="button"
-                      className={`item ${
-                        atmosphereChosen && atmosphere === "還元焼成" ? "active" : ""
-                      }`}
-                      disabled={!clayChosen}
-                      onClick={() => pickAtmosphere("還元焼成")}
-                    >
-                      -{t.reduction}
-                    </button>
-                  </div>
                 </div>
               </div>
 
-              {/* かたちの 9 マス。選ぶと閉じて中央は器のプレビューになる */}
-              {formOpen && (
-                <div className="panel shape-grid">
-                  {FORM_CELLS.map((cell) => {
-                    const selectable = cell.key === "surprise" || !!cell.shape;
-                    const selected = shapeChosen && selectedCell === cell.key;
-                    const cellLabel =
-                      cell.key === "surprise" && selected ? t.shapes.wheel : t.shapes[cell.key];
-                    return (
-                      <button
-                        key={cell.key}
-                        type="button"
-                        className={`shape-cell ${selected ? "selected" : ""}`}
-                        disabled={!selectable}
-                        aria-label={cellLabel}
-                        onClick={() => pickCell(cell)}
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={`/shapes/${clayDir}/${cell.key}.jpg`} alt="" />
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
+              {/* かたちの 9 マス。押したマスが選択中になり、NEXT で決定する */}
+              <div className="panel shape-grid">
+                {FORM_CELLS.map((cell) => {
+                  const selectable = cell.key === "surprise" || !!cell.shape;
+                  const selected = shapeChosen && selectedCell === cell.key;
+                  const cellLabel =
+                    cell.key === "surprise" && selected ? t.shapes.wheel : t.shapes[cell.key];
+                  return (
+                    <button
+                      key={cell.key}
+                      type="button"
+                      className={`shape-cell ${selected ? "selected" : ""}`}
+                      disabled={!selectable}
+                      aria-label={cellLabel}
+                      aria-pressed={selected}
+                      onClick={() => pickCell(cell)}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={`/shapes/${SHAPE_THUMB_DIR}/${cell.key}.jpg`} alt="" />
+                    </button>
+                  );
+                })}
+              </div>
 
               {/* 一筆描き: モーダルで描き、描き終わると閉じて custom の形になる */}
               {sketchOpen && (
@@ -685,7 +609,12 @@ export default function Home() {
               )}
 
               <div className="nav">
-                <button type="button" className="link" onClick={() => setStep(2)}>
+                <button
+                  type="button"
+                  className="link"
+                  disabled={!shapeChosen}
+                  onClick={() => setStep(2)}
+                >
                   {t.next} <Arrow dir="right" />
                 </button>
               </div>
@@ -728,6 +657,24 @@ export default function Home() {
                       <button type="button" className="glaze-change" onClick={openGlazeModal}>
                         -{glazeCombo ? t.glazeChange : t.glazeOpen}
                       </button>
+                      {glazeCheck?.status === "checking" && (
+                        <div className="sub-hint">{t.glazeChecking}</div>
+                      )}
+                      {glazeCheck?.status === "none" && (
+                        <div className="sub-hint is-warn">{t.glazeUnavailable}</div>
+                      )}
+                      {glazeCheck?.status === "unknown" && (
+                        <>
+                          <div className="sub-hint is-warn">{t.glazeCheckFailed}</div>
+                          <button
+                            type="button"
+                            className="glaze-change"
+                            onClick={() => setGlazeCheckKey((k) => k + 1)}
+                          >
+                            -{t.glazeRecheck}
+                          </button>
+                        </>
+                      )}
                     </div>
                   )}
                   {activeMode === "mood" && (
@@ -738,12 +685,30 @@ export default function Home() {
                         value={mood}
                         onChange={(e) => editMood(e.target.value)}
                       />
-                      {moodPick ? (
-                        <div className="glaze-combo">
-                          <span className="glaze-combo-swatch" style={{ background: moodPick.color }} />
-                          {moodPick.glaze_types
-                            .map((g) => (lang === "en" ? g.en : g.ja))
-                            .join(lang === "en" ? ", " : "、")}
+                      {moodResult && moodPick ? (
+                        // 近い順の候補。色見本と釉名称・焼成温度を見て選ぶ (最初は 1 件目)
+                        <div className="mood-cands" role="radiogroup" aria-label={t.moodCandidates}>
+                          <div className="sub-hint">{t.moodCandidates}</div>
+                          {moodResult.results.map((r, k) => (
+                            <button
+                              key={r.recipe_id}
+                              type="button"
+                              role="radio"
+                              aria-checked={r === moodPick}
+                              className={`glaze-cand ${r === moodPick ? "active" : ""}`}
+                              onClick={() => setMoodIndex(k)}
+                            >
+                              <span className="glaze-cand-swatch" style={{ background: r.color }} />
+                              <span className="glaze-cand-names">
+                                {r.glaze_types.length > 0
+                                  ? r.glaze_types
+                                      .map((g) => (lang === "en" ? g.en : g.ja))
+                                      .join(lang === "en" ? ", " : "、")
+                                  : "—"}
+                              </span>
+                              <span className="glaze-cand-count">{r.temp}°C</span>
+                            </button>
+                          ))}
                         </div>
                       ) : (
                         <button
@@ -794,14 +759,18 @@ export default function Home() {
             ui={{
               mode: mode ?? "visual",
               glaze,
-              hyomen,
-              yuseijoA,
-              yuseijoB,
               glazeCodes: glazeCombo ?? [],
+              glazeRecipeId: glazeCheck?.status === "ok" ? glazeCheck.recipeId : null,
               mood,
               moodRecipeId: moodPick?.recipe_id ?? null,
-              clay: clay.name,
-              atmosphere,
+              recipeTemp:
+                mode === "style"
+                  ? glazeCheck?.status === "ok"
+                    ? glazeCheck.temp
+                    : null
+                  : mode === "mood"
+                    ? (moodPick?.temp ?? null)
+                    : null,
               temp: DEFAULT_TEMP,
             }}
             shape={shape}
@@ -810,9 +779,10 @@ export default function Home() {
             t={t}
             onGeneratingChange={setFiring}
             onProgress={setFiringProgress}
+            onBack={() => setStep(2)}
           />
 
-          {step === 3 && (
+          {step === 3 && !firingFailed && (
             <div className="nav">
               <button type="button" className="link" onClick={() => setStep(2)}>
                 <Arrow dir="left" /> {t.back}
@@ -847,7 +817,7 @@ export default function Home() {
               lang={lang}
               t={t}
               index={glazeIndex}
-              conditions={baseConditions}
+              conditions={NO_CONDITIONS}
               picks={glazePicks}
               onTogglePick={toggleGlazePick}
               onClearPicks={() => setGlazePicks([])}
@@ -855,33 +825,6 @@ export default function Home() {
               onConfirm={confirmGlazeCombo}
               onClose={() => setGlazeModal(false)}
             />
-          )}
-
-          {/* Step 2 見た目: 表面・透明度・質感は中央パネルの下部にチェックボックス風で並べる (見出し無し) */}
-          {step === 2 && mode === "visual" && (
-            <div className="panel-options">
-              <OptionRow
-                groupLabel={t.surface}
-                options={HYOMEN_OPTIONS}
-                selected={hyomen}
-                label={(v) => t.hyomen[v]}
-                onSelect={setHyomen}
-              />
-              <OptionRow
-                groupLabel={t.transparency}
-                options={YUSEIJO_A_OPTIONS}
-                selected={yuseijoA}
-                label={(v) => t.yuseijoA[v]}
-                onSelect={setYuseijoA}
-              />
-              <OptionRow
-                groupLabel={t.character}
-                options={YUSEIJO_B_OPTIONS}
-                selected={yuseijoB}
-                label={(v) => t.yuseijoB[v]}
-                onSelect={setYuseijoB}
-              />
-            </div>
           )}
 
           {showViewer && (

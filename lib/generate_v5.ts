@@ -222,19 +222,23 @@ function sojiOf(clay: string): Soji {
   return "SojiToki";
 }
 
-/** Step-1 で決まる条件 (素地・焼成雰囲気)。釉薬の絞り込みと実在レシピの選択に使う */
+/**
+ * 素地・焼成雰囲気の条件。釉薬の絞り込みと実在レシピの選択に使う。
+ * 2026-11-12 から UI では素地・焼成雰囲気を選ばない (選ばれたレシピのものを結果に表示する) ので、
+ * 指定が無い項目は条件に入れない (= 絞り込まない)
+ */
 export function baseConditionsOf(
   ui: Pick<FiringUiState, "clay" | "atmosphere">
-): { soji: Soji; shosei: Shosei } {
-  return {
-    soji: sojiOf(ui.clay),
-    shosei: ui.atmosphere.includes("還元") ? "ShouseiKangen" : "ShouseiSanka",
-  };
+): { soji?: Soji; shosei?: Shosei } {
+  const cond: { soji?: Soji; shosei?: Shosei } = {};
+  if (ui.clay) cond.soji = sojiOf(ui.clay);
+  if (ui.atmosphere) cond.shosei = ui.atmosphere.includes("還元") ? "ShouseiKangen" : "ShouseiSanka";
+  return cond;
 }
 
 /**
  * 現行 UI の選択状態 → v5 の glaze。
- * - 見た目からつくる: 色 + 表面状態/透明度/質感 (UI が v5 の分類をそのまま持つ)
+ * - 見た目からつくる: 色だけ (表面状態/透明度/質感は UI から外した。指定があるときだけ送る)
  * - 釉薬から選ぶ: 本線は実在レシピ (recipe_id) で焼く (FiringPanel が索引から選ぶ)。
  *   索引に見つからなかったときの保険として、素地・焼成と選択中の色だけを送る
  * - 言葉からつくる: v5 に自由文の口がないため、素地・焼成と選択中の色だけを送る
@@ -244,9 +248,10 @@ export function buildGlazeV5(ui: FiringUiState): GlazeBySelection {
   if (ui.glaze) glaze.color = ui.glaze.hex;
   if (ui.mode !== "visual") return glaze;
 
-  glaze.hyomen = ui.hyomen;
-  glaze.yuseijo_a = ui.yuseijoA;
-  glaze.yuseijo_b = ui.yuseijoB;
+  // 表面状態・透明度・質感は UI から外した (2026-11-12)。指定があるときだけ送る
+  if (ui.hyomen) glaze.hyomen = ui.hyomen;
+  if (ui.yuseijoA) glaze.yuseijo_a = ui.yuseijoA;
+  if (ui.yuseijoB) glaze.yuseijo_b = ui.yuseijoB;
   return glaze;
 }
 

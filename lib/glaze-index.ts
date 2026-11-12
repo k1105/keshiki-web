@@ -9,9 +9,12 @@
 // - Step-3: 焼成演出に使う焼成温度を実データから採る
 // - Step-2B: 確定した組み合わせの実データの代表色を器のプレビューに載せる (representativeGlazeColor)
 //
-// ⚠ 仮置き: 条件列のコード (01, 02, ...) と意味の対応表はデータベースに同梱されていない。
-// v5 API (lib/generate_v5.ts) の列挙順と同じ並びで 01 から振られている前提で実装している。
-// 岸さんに確認が取れたら、下の *_DIGIT を見直すこと。
+// ⚠ 条件列のコード (01, 02, ...) と意味の対応表はデータベースに同梱されていない。
+// 下の *_DIGIT は 2026-11-12 に MainTable xlsx の中身から推定したもの (岸さんの確定待ち):
+// - 素地: 01 は原料配合に「磁器」が多く 1280〜1300℃、02 は「信楽」「赤土」が多い、03 は「瓦」が多く 1100℃
+// - 釉性状１: 01 に「無色」、03 に「乳濁」が多い / 釉性状２: 03 に「ラスター」、04 に「結晶」、05 に「貫入」が多い
+// - 件数の比も v5 仕様書 (docs/api/serverless_api_v5.md) の索引件数と合う
+// 以前は v5 API の列挙順のまま 01 から振っていて、素地 (陶器/磁器)・釉性状１・釉性状２ がずれていた。
 
 import type {
   Hyomen,
@@ -63,8 +66,8 @@ export type GlazeRecipeRef = {
 // ---- v5 の列挙 → 索引のコード桁 (仮置き。ファイル冒頭の注意を参照) ----
 
 const SOJI_DIGIT: Record<Soji, string> = {
-  SojiToki: "1",
-  SojiJiki: "2",
+  SojiJiki: "1",
+  SojiToki: "2",
   SojiAkatsuchi: "3",
   SojiOther: "4",
 };
@@ -79,16 +82,16 @@ const HYOMEN_DIGIT: Record<Hyomen, string> = {
   // "4" = 特殊 (仕様の Special Surface)。v5 に対応値が無いので UI には出さない
 };
 const YUSEIJO_A_DIGIT: Record<YuseijoA, string> = {
-  YuseijoAMFutoumei: "1",
+  YuseijoAMushokuTomei: "1",
   YuseijoAYusyokuTomei: "2",
-  YuseijoAMushokuTomei: "3",
+  YuseijoAMFutoumei: "3",
 };
 const YUSEIJO_B_DIGIT: Record<YuseijoB, string> = {
   YuseijoBKinitsu: "1",
   YuseijoBFukinnitsu: "2",
-  YuseijoBKessho: "3",
-  YuseijoBKannyu: "4",
-  YuseijoBLuster: "5",
+  YuseijoBLuster: "3",
+  YuseijoBKessho: "4",
+  YuseijoBKannyu: "5",
 };
 
 /** 条件 → 5 桁パターン。絞り込まない桁は "." */

@@ -47,3 +47,13 @@ export const configMissingResponse = (api: RunpodApi = "v3") =>
     },
     { status: 503 }
   );
+
+/**
+ * RunPod がエラーを返したときに proxy が返す HTTP ステータス。
+ * 待てば直らないもの (400 入力不正 / 401・403 権限 / 404 ジョブが無い など) はそのまま返し、
+ * クライアントがすぐ失敗にできるようにする。429 と 5xx は一時的なものとして 502 にまとめる
+ * (クライアントは 5xx を次のポーリングで取り直す)
+ */
+export function upstreamStatus(status: number): number {
+  return status >= 400 && status < 500 && status !== 429 ? status : 502;
+}

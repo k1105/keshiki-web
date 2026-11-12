@@ -116,20 +116,23 @@ export async function textSearch(
 /** 疑似応答 (?mock=1)。本番 endpoint に text_search が入るまでの演出確認用。温まった worker と同じ 1.5 秒で返す */
 export async function mockTextSearch(input: TextSearchInput, speed = 1): Promise<TextSearchOutput> {
   await new Promise((r) => setTimeout(r, 1500 / speed));
+  // 候補の見た目を確かめられるよう、色と温度を少しずつ変えて top_k 件返す
+  const colors = ["#2f6d5f", "#3f7f8f", "#6d8f4f", "#1f4d5f", "#8fa58f"];
+  const count = Math.min(input.top_k ?? 5, colors.length);
   return {
     text: input.text,
     rewrite: { description: "光沢のある深い緑色の釉", color: "#2f6d5f" },
     style_filter: [],
     relaxed: [],
-    results: [
+    results: colors.slice(0, count).map((color, k) => (
       {
-        recipe_id: "mock-text-search",
-        score: 0.88,
+        recipe_id: `mock-text-search-${k}`,
+        score: 0.88 - k * 0.03,
         appearance_ja: "つやのある深い緑色の釉",
         appearance_en: "Glossy deep green glaze",
         soji: input.filters?.soji ?? "SojiToki",
         shosei: input.filters?.shosei ?? "ShouseiSanka",
-        temp: 1240,
+        temp: 1240 - k * 20,
         hyomen: "HyomenKotaku",
         yuseijo_a: "YuseijoAYusyokuTomei",
         yuseijo_b: "YuseijoBKinitsu",
@@ -137,8 +140,8 @@ export async function mockTextSearch(input: TextSearchInput, speed = 1): Promise
           { code: "A01", ja: "長石釉", en: "Feldspathic glaze" },
           { code: "C02", ja: "織部釉", en: "Oribe glaze" },
         ],
-        color: "#2f6d5f",
-      },
-    ],
+        color,
+      }
+    )),
   };
 }

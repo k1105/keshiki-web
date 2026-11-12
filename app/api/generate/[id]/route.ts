@@ -6,6 +6,7 @@ import {
   configMissingResponse,
   parseRunpodApi,
   runpodConfig,
+  upstreamStatus,
 } from "@/lib/runpod";
 
 export async function GET(
@@ -24,7 +25,7 @@ export async function GET(
     if (!res.ok) {
       return Response.json(
         { error: "pod_api_error", message: await res.text() },
-        { status: 502 }
+        { status: upstreamStatus(res.status) }
       );
     }
     return Response.json(await res.json());
@@ -53,7 +54,7 @@ export async function DELETE(
     if (!res.ok) {
       return Response.json(
         { error: "pod_api_error", message: await res.text() },
-        { status: 502 }
+        { status: upstreamStatus(res.status) }
       );
     }
     return Response.json(await res.json());
