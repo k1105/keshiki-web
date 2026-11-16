@@ -7,7 +7,7 @@
 // - v5 完了: images[0].url をそのまま 3D に渡す (切り抜かない)
 // - 3D の途中経過: stage ごとに cutout / points / faces を保持する
 // - 3D 完了: glb (と detail があれば色のない形状の glb)
-// - caps.model3d が false のときは 3D を呼ばず、v5 の絵を仕上げて (finishImage: 背景の切り抜き)
+// - caps.model3d が false のときは 3D を呼ばず、v5 の絵をそのまま (背景つき。切り抜かない)
 //   firedImage に入れ、done にする (glb は null のまま)。焼き上がりは firedImage を見せる
 // 画面の演出 (温度カウンター・粒の描画など) はこの進捗 (FiringProgress) を見て描く。ここでは描かない。
 
@@ -63,7 +63,7 @@ export type FiringProgress = {
   /** 完成した器の画像 (data URL) */
   image: string | null;
   output: GenerateOutputV5 | null;
-  /** 焼き上がりとして見せる絵 (3D を作らないときだけ)。image の背景を抜いた PNG。抜けなかったら image と同じ */
+  /** 焼き上がりとして見せる絵 (3D を作らないときだけ)。image と同じ (背景つき。切り抜かない) */
   firedImage: string | null;
   // ---- 3D ----
   cutout: string | null;
@@ -100,7 +100,7 @@ export type RunFiringOptions = {
   /** 生成サーバーに worker が 1 台もいない (待っても始まらない) と分かったときのメッセージ */
   unavailableMessage: string;
   /**
-   * 絵の仕上げ (背景の切り抜き)。生成途中の絵と、3D を作らないときの焼き上がりの絵に使う。
+   * 生成途中の絵の仕上げ (背景の切り抜き)。焼き上がりの絵には使わない (背景つきのまま見せる)。
    * 省略時・失敗時は v5 の絵をそのまま使う
    */
   finishImage?: (image: string) => Promise<string>;
@@ -311,26 +311,17 @@ export async function runFiring(
         return fail("v5", { error: "empty_output", message: "画像が返されませんでした" });
       }
       output = r.output;
-      // 3D を作らないときは、絵は仕上げが済んでから done と一緒に出す (背景つきの絵を一瞬見せない)
+      // 3D を作らないときは、絵は done と一緒に出す (焼成中の画面に背景つきの絵を出さない)
       if (opts.caps.model3d) {
         update({ recipe: output.recipe, image: output.images[0].url, output });
       }
     }
 
     // ---- 3D: 器の画像 → GLB ----
-    // 一時無効化中 (lib/firing-capabilities.ts model3d)。v5 の絵 (背景を抜いたもの) で焼き上がりにする
+    // 一時無効化中 (lib/firing-capabilities.ts model3d)。v5 の絵 (背景つきのまま) で焼き上がりにする
     if (!opts.caps.model3d) {
       const image = output.images[0].url;
-      let firedImage = image;
-      if (opts.finishImage) {
-        try {
-          firedImage = await opts.finishImage(image);
-        } catch (e) {
-          console.error("finishImage failed", e);
-        }
-        if (opts.signal.aborted) throw new AbortedError();
-      }
-      update({ stage: "done", recipe: output.recipe, image, output, firedImage });
+      update({ stage: "done", recipe: output.recipe, image, output, firedImage: image });
       return p;
     }
     // v5 の画像 (背景つき) をそのまま渡す。深度で切り抜いた透過画像は渡さない

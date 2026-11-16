@@ -57,6 +57,11 @@ const MOOD_CANDIDATES = 4;
 const MOOD_DEBOUNCE_MS = 1000;
 // 感覚でつくる: 候補サムネイルの器の大きさ
 const CAND_ZOOM = 0.72;
+// 釉薬から選ぶ: 焼成できるかの確認がこれより長引いたときだけ「確認中」を出す (毎回は出さない)
+const GLAZE_CHECK_HINT_MS = 2500;
+// かたちの一覧: マスの中の器の大きさと色 (素焼きの色)
+const THUMB_ZOOM = 0.72;
+const THUMB_HEX = "#ecdcc4";
 
 type CellKey =
   "vase" | "haniwa" | "plate" | "handbag" | "teapot" | "flower" | "mug" | "cat" | "surprise";
@@ -80,15 +85,17 @@ const FORM_CELLS: { key: CellKey; shape?: ShapeKey | ModelShapeKey }[] = [
   { key: "surprise" },
 ];
 
-// かたちのサムネイル。ローポリの器を素焼きの色で描き、結晶化フィルターをかけた透過 PNG
-const shapeThumb = (key: CellKey) => `/shapes/lowpoly/${key}.png`;
-
 type Mode = "visual" | "style" | "mood";
 const MODES: Mode[] = ["visual", "style", "mood"];
 type View = "title" | "main";
 
 // ロゴは文字 (Bodoni URW Medium)
 const LOGO_TEXT = "Glazescape Project";
+// タイトル画面: 文字が現れる順番 (0 が最初)。7 は文字数 18 と互いに素なので、全文字がばらばらの順に 1 回ずつ並ぶ
+const TITLE_CHARS = LOGO_TEXT.split("");
+const TITLE_ORDER = TITLE_CHARS.map((_, i) => (i * 7 + 3) % TITLE_CHARS.length);
+const TITLE_START_S = 0.3;
+const TITLE_STAGGER_S = 0.09;
 
 function RotateIcon({ dir }: { dir: "left" | "right" }) {
   return (
@@ -100,7 +107,8 @@ function RotateIcon({ dir }: { dir: "left" | "right" }) {
 }
 
 export default function Home() {
-  const [lang, setLang] = useState<Lang>("ja");
+  // 言語は日本語で固定 (En は選べない、docs/1115_web.pdf)
+  const [lang] = useState<Lang>("ja");
   const t = STRINGS[lang];
   const [view, setView] = useState<View>("title");
   const [about, setAbout] = useState(false);
@@ -141,7 +149,7 @@ export default function Home() {
     | { status: "unavailable" } // 生成サーバーに worker が 1 台もいない
     | null
   >(null);
-  // 「もう一度確認する」を押すたびに進めて、確認をやり直す
+  // 組み合わせを決め直すたびに進めて、確認をやり直す (同じ組み合わせを選び直したときも確かめ直す)
   const [glazeCheckKey, setGlazeCheckKey] = useState(0);
   // 感覚でつくる: 文を書くと、入力が止まってから自動で自由探索 (text_search) に投げ、
   // 返ってきた実在レシピの候補 (moodResult) が揃ってはじめて焼成に進める。文を変えたら確定は無効になる。
@@ -230,6 +238,18 @@ export default function Home() {
     return () => controller.abort();
   }, [mode, glazeIndex, glazeCombo, glazeCheckKey]);
 
+  // 「確認中」は確認が長引いたときだけ出す (すぐ終わる確認で毎回ちらつかせない)
+  const glazeChecking = glazeCheck?.status === "checking";
+  const [glazeCheckSlow, setGlazeCheckSlow] = useState(false);
+  useEffect(() => {
+    if (!glazeChecking) {
+      setGlazeCheckSlow(false);
+      return;
+    }
+    const timer = setTimeout(() => setGlazeCheckSlow(true), GLAZE_CHECK_HINT_MS);
+    return () => clearTimeout(timer);
+  }, [glazeChecking]);
+
   // 一筆書きのパネルは Esc でも閉じる
   useEffect(() => {
     if (!sketchOpen) return;
@@ -272,6 +292,7 @@ export default function Home() {
 
   const confirmGlazeCombo = (codes: string[]) => {
     setGlazeCombo(codes);
+    setGlazeCheckKey((k) => k + 1);
     setGlazeModal(false);
   };
 
@@ -406,7 +427,7 @@ export default function Home() {
   const showResult = step === 3 && !firing && !firingFailed;
   // 焼き上がった器の GLB (焼成中・未生成は null)
   const firedGlb = step >= 3 && !firing ? (firingProgress?.glb ?? null) : null;
-  // 焼き上がった器の絵 (背景を抜いた PNG)。3D を作らないときはこれが焼き上がりの表示になる
+  // 焼き上がった器の絵 (背景つきのまま)。3D を作らないときはこれが焼き上がりの表示になる
   const firedImage = step >= 3 && !firing ? (firingProgress?.firedImage ?? null) : null;
   // 焼成中に届く途中経過の粒。届くまではローポリのまま (焼成開始で急にリッチにしない)
   const firingPoints = firingNow ? (firingProgress?.points ?? null) : null;
@@ -431,18 +452,18 @@ export default function Home() {
     <>
       <div className={`backdrop ${backdropState}`} aria-hidden="true">
         <div className="backdrop-firing" />
-        <div className="backdrop-grain" />
       </div>
 
       <div className={`stage ${inFlow && firingNow ? "is-firing" : ""}`}>
-        {/* 共通クローム: ロゴと右ナビ。タイトル (中央にロゴだけ) と焼成演出中は隠す */}
+        {/* 共通クローム: ロゴと右ナビ。タイトル (中央にロゴだけ) と焼成演出中は隠す。
+            ロゴを押すとタイトル画面に戻る */}
         {view === "main" && !(inFlow && firingNow) && (
           <button
             type="button"
             className="logo"
             onClick={() => {
               setAbout(false);
-              setView("main");
+              setView("title");
               setStep(1);
             }}
           >
@@ -459,22 +480,22 @@ export default function Home() {
             >
               {t.about}
             </button>
+            {/* Create: かたちを選ぶ画面 (Select Form) に飛ぶ */}
+            <button
+              type="button"
+              className="rnav-item is-create"
+              onClick={() => {
+                setAbout(false);
+                setStep(1);
+              }}
+            >
+              {t.create}
+            </button>
+            {/* En は選べない (表示だけ) */}
             <div className="rnav-item is-lang">
-              <button
-                type="button"
-                className={lang === "ja" ? "active" : ""}
-                onClick={() => setLang("ja")}
-              >
-                Jp
-              </button>
+              <span className="active">Jp</span>
               <span> / </span>
-              <button
-                type="button"
-                className={lang === "en" ? "active" : ""}
-                onClick={() => setLang("en")}
-              >
-                En
-              </button>
+              <span>En</span>
             </div>
             {/* ARCHIVE / SHARE は未実装のため非活性 */}
             <span className="rnav-item is-archive is-disabled" aria-disabled="true">
@@ -493,7 +514,14 @@ export default function Home() {
             aria-label={t.start}
             onClick={() => setView("main")}
           >
-            {LOGO_TEXT}
+            {TITLE_CHARS.map((ch, i) => (
+              <span
+                key={i}
+                style={{ animationDelay: `${TITLE_START_S + TITLE_ORDER[i] * TITLE_STAGGER_S}s` }}
+              >
+                {ch}
+              </span>
+            ))}
           </button>
         )}
 
@@ -547,8 +575,18 @@ export default function Home() {
                         aria-pressed={selected}
                         onClick={() => pickCell(cell)}
                       >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={shapeThumb(cell.key)} alt="" />
+                        {/* Step 2 と同じローポリの器が水平に回る。? (一筆書きの入口) は回さない */}
+                        <VesselCanvas
+                          shape={cell.shape ?? "vase"}
+                          glyph={cell.key === "surprise" ? "question" : undefined}
+                          texturePath={null}
+                          hex={THUMB_HEX}
+                          zoom={THUMB_ZOOM}
+                          lowPoly
+                          shadow={false}
+                          autoRotate={cell.key !== "surprise"}
+                          autoRotateSpeed={ROTATE_SPEED}
+                        />
                       </button>
                     );
                   })}
@@ -615,25 +653,17 @@ export default function Home() {
                     <button type="button" className="btn is-small" onClick={openGlazeModal}>
                       {glazeCombo ? t.glazeChange : t.glazeOpen}
                     </button>
-                    {glazeCheck?.status === "checking" && (
+                    {glazeChecking && glazeCheckSlow && (
                       <div className="sub-hint">{t.glazeChecking}</div>
                     )}
                     {glazeCheck?.status === "none" && (
                       <div className="sub-hint is-warn">{t.glazeUnavailable}</div>
                     )}
+                    {/* 確かめられなかったときは知らせるだけ (選び直すと確かめ直す) */}
                     {(glazeCheck?.status === "unknown" || glazeCheck?.status === "unavailable") && (
-                      <>
-                        <div className="sub-hint is-warn">
-                          {glazeCheck.status === "unavailable" ? t.serverUnavailable : t.glazeCheckFailed}
-                        </div>
-                        <button
-                          type="button"
-                          className="btn is-small"
-                          onClick={() => setGlazeCheckKey((k) => k + 1)}
-                        >
-                          {t.glazeRecheck}
-                        </button>
-                      </>
+                      <div className="sub-hint is-warn">
+                        {glazeCheck.status === "unavailable" ? t.serverUnavailable : t.glazeCheckFailed}
+                      </div>
                     )}
                   </div>
                 )}
@@ -758,13 +788,13 @@ export default function Home() {
             onBack={() => setStep(2)}
           />
 
-          {/* 焼き上がり: Save は Archive への保存 (未実装のため非活性)、Try Another は Step 2 に戻る */}
+          {/* 焼き上がり: Save は Archive への保存 (未実装のため非活性)、Try Another は Select Form (Step 1) に戻る */}
           {showResult && (
             <div className="nav">
               <button type="button" className="btn" disabled>
                 {t.save}
               </button>
-              <button type="button" className="btn" onClick={() => setStep(2)}>
+              <button type="button" className="btn" onClick={() => setStep(1)}>
                 {t.tryAnother}
               </button>
             </div>
@@ -838,6 +868,9 @@ export default function Home() {
           )}
         </div>
       </div>
+
+      {/* 粒子: 画面全体のいちばん上に重ねる */}
+      <div className={`grain ${inFlow && firingNow ? "is-firing" : ""}`} aria-hidden="true" />
 
       {captureDebug && (
         <CaptureDebugger

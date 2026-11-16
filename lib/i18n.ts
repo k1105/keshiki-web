@@ -7,6 +7,7 @@ export type Lang = "en" | "ja";
 // JP / EN で切り替わるのは説明文・About・釉薬名
 const FIXED = {
   about: "About",
+  create: "Create",
   archive: "Archive",
   share: "Share",
   selectForm: "Select Form",
@@ -105,7 +106,6 @@ const en = {
   glazeChecking: "Checking that this glaze can be fired...",
   glazeUnavailable: "This combination cannot be fired right now. Please choose another one.",
   glazeCheckFailed: "Could not check whether this glaze can be fired.",
-  glazeRecheck: "Check again",
   moodCandidates: "Closest glazes. Choose one.",
   moodPlaceholder: "Describe the glaze you have in mind.",
   moodExample: "ex) Like a forest after rain, quiet and a little damp.",
@@ -237,7 +237,6 @@ const ja: Strings = {
   glazeChecking: "焼成できるか確認中...",
   glazeUnavailable: "この組み合わせは今は焼成できません。別の組み合わせを選んでください",
   glazeCheckFailed: "焼成できるか確認できませんでした",
-  glazeRecheck: "もう一度確認する",
   moodCandidates: "近い釉薬の候補 (選べます)",
   moodPlaceholder: "つくりたい釉薬のイメージを書いてください。",
   moodExample: "ex) 雨上がりの森みたいな、静かで少し湿った感じ。",
@@ -277,13 +276,13 @@ const ja: Strings = {
   rotateLeft: "左に回す",
   rotateRight: "右に回す",
 
-  // docs/1115_Glaiz_web.pdf p.3 のコピー
+  // docs/1115_web.pdf (About：テキスト変更) のコピー
   aboutHeading: ["陶芸の釉薬表現を AI で拡張する"],
   aboutBody: [
     "陶器の表面に広がる、複雑で豊かな色彩や景色。その美しさを生み出すのが「釉薬」です。釉薬は、さまざまな原材料の配合や焼成温度、窯の中の環境などが複雑に作用することで、無限ともいえる表情を生み出します。しかし、その焼き上がりを正確に予測することは、熟練した陶芸家にとっても容易ではありません。理想の釉薬をつくるには、膨大な試行錯誤と経験、化学的な知識が必要とされます。",
-    "一方、陶芸には、偶然が生み出す美しさがあります。窯の中のわずかな環境の変化によって、予期せぬ色彩や模様が現れる「窯変」。それは、ときに人間の想像を超えた表現を生み出します。この予測不能な創造性は、生成 AI にも通じるものがあります。同じ条件を与えても異なる結果を生み出し、ときには「ハルシネーション」と呼ばれる想定外のイメージを生成する AI。古来の陶芸と最新の AI。両者をつなぐ鍵は、偶然性を創造の力に変えることにあるのではないでしょうか。",
-    "「Glazescape Project」は、このふたつのテクノロジーを融合し、釉薬の新しい可能性を探る研究開発プロジェクトです。活用するのは、産業技術総合研究所が長年にわたり蓄積してきた、2万点を超える「セラミックカラーデータベース」。データベースに含まれる釉薬の原材料や配合、焼成条件、化学組成と、それらによって生まれた焼き上がりの画像を、画像生成 AI に追加学習させています。",
-    "私たちが目指すのは、焼成結果を予測することだけではありません。人間の感性と AI の創造性が交わることで生まれる、もうひとつの陶芸体験。伝統的なものづくりを新しいテクノロジーで拡張し、誰もが自由に想像し、試し、偶然の美しさと出会える未来を探求していきます。",
+    "一方、陶芸には、偶然が生み出す美しさがあります。窯の中で予期せぬ色彩や模様が現れる「窯変」。そして、生成AIが想定外のイメージを生み出す「ハルシネーション」。時代も仕組みも異なるふたつの現象には、人間の想像を超えた表現を生み出すという共通点があります。「Glazescape Project」は、このふたつのテクノロジーを融合し、釉薬の新しい可能性を探る研究開発プロジェクトです。",
+    "活用するのは、産業技術総合研究所が長年にわたり蓄積してきた、2万点を超える「セラミックカラーデータベース」。データベースに含まれる釉薬の原材料や配合、焼成条件、化学組成と、それらによって生まれた焼き上がりの画像を、画像生成AIに追加学習させています。",
+    "今回の展示では、その学習に用いたデータベースの一部と、AIによって生成された画像を紹介します。私たちが目指すのは、焼成結果を予測することだけではありません。人間の感性とAIの創造性が交わることで生まれる、もうひとつの陶芸体験。伝統的なものづくりを新しいテクノロジーで拡張し、誰もが自由に想像し、試し、偶然の美しさと出会える未来を探求していきます。",
   ],
 };
 

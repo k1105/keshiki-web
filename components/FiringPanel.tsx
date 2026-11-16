@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { FiringUiState } from "@/lib/firing-request";
 import { createDepthCutter } from "@/lib/cutout";
 import { DEFAULT_CAPTURE_ANGLE, renderVesselDepthPng, type CaptureAngle } from "@/lib/depth";
@@ -21,7 +21,6 @@ import {
   type SegerV5,
 } from "@/lib/generate_v5";
 import { loadGlazeIndex, pickGlazeRecipe } from "@/lib/glaze-index";
-import { glazeStyleByCode } from "@/lib/glaze-styles";
 import { liveJobClient } from "@/lib/job-client";
 import { STRINGS, type Strings } from "@/lib/i18n";
 import { preloadVesselModel } from "@/lib/vessel-models";
@@ -57,6 +56,8 @@ const SETTLED: FiringStage[] = ["done", "failed", "config"];
 // 1060℃ のレシピでも一度 1280℃ まで表示されてしまった)
 const TEMP_RISE_MS = 30_000;
 const PROVISIONAL_TEMP = 1000;
+// v5 の生成ステップ数 (途中の絵に steps が入っていないときの分母)
+const DEFAULT_PREVIEW_STEPS = 30;
 
 // ゼーゲル式の表示名 (DB の key → 下付き文字)
 const SEGER_LABEL: Record<keyof SegerV5, string> = {
@@ -170,8 +171,19 @@ function FiringSteps({
   );
 }
 
-/** 生成途中の絵。新しい絵は前の絵の上にフェードインする */
-function PreviewFrames({ src, frameKey }: { src: string | null; frameKey: string }) {
+/**
+ * 生成途中の絵。窯の中の器として、ぼかした影で見せる (globals.css .firing-preview)。
+ * 新しい絵は前の絵の上にゆっくり重なり、clarity (0 → 1、生成の進み) が上がるほど輪郭がはっきりする
+ */
+function PreviewFrames({
+  src,
+  frameKey,
+  clarity,
+}: {
+  src: string | null;
+  frameKey: string;
+  clarity: number;
+}) {
   const [layers, setLayers] = useState<{ prev: string | null; cur: string | null; key: string }>({
     prev: null,
     cur: null,
@@ -182,11 +194,20 @@ function PreviewFrames({ src, frameKey }: { src: string | null; frameKey: string
   }, [src, frameKey]);
   if (!layers.cur) return null;
   return (
-    <div className="firing-preview" aria-hidden="true">
+    <div
+      className="firing-preview"
+      aria-hidden="true"
+      style={{ "--clarity": clarity } as CSSProperties}
+    >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       {layers.prev && <img src={layers.prev} alt="" />}
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img key={layers.key} className="is-in" src={layers.cur} alt="" />
+      <img
+        key={layers.key}
+        className={layers.prev ? "is-in" : "is-in is-first"}
+        src={layers.cur}
+        alt=""
+      />
     </div>
   );
 }
@@ -266,11 +287,11 @@ function SelectedConditions({
   shape: VesselShape;
   relaxed: string[];
 }) {
-  const glazeNames = ui.glazeCodes.map((code) => glazeStyleByCode(code)?.ja ?? code).join("、");
   return (
     <div className="recipe-block">
       <div className="rb-ttl">選択した条件</div>
-      {/* かたちの横に、選んだ色 / 釉薬 / 入力した言葉を並べる */}
+      {/* かたちの横に、選んだ色 / 入力した言葉を並べる。
+          釉薬から選んだときの釉名称は、すぐ下の「釉名称」に出るのでここには出さない */}
       <div className="recipe-row">
         <span className="key">{shapeLabel(shape)}</span>
         {ui.mode === "visual" && ui.glaze && (
@@ -279,7 +300,6 @@ function SelectedConditions({
             {ui.glaze.hex}
           </span>
         )}
-        {ui.mode === "style" && <span className="val">{glazeNames || "-"}</span>}
         {ui.mode === "mood" && <span className="val recipe-words">{ui.mood.trim() || "-"}</span>}
       </div>
       {relaxed.length > 0 && (
@@ -408,7 +428,7 @@ export default function FiringPanel({
           timeoutMessage: t.fireTimeout,
           unavailableMessage: t.serverUnavailable,
           onProgress: publish,
-          // 途中の絵も焼き上がりの絵も、送った深度画像で背景を抜いてから見せる
+          // 途中の絵は、送った深度画像で背景を抜いてから見せる (焼き上がりの絵は背景つきのまま)
           finishImage: createDepthCutter(depthPng),
         }
       ).catch((e): FiringProgress => ({
@@ -452,9 +472,15 @@ export default function FiringPanel({
     // 粒が届いたら粒 (VesselCanvas) を見せるので、絵は粒が届くまで
     const frame = progress.points ? null : progress.preview?.image ?? progress.image ?? null;
     const frameKey = progress.preview ? `step:${progress.preview.step}` : "final";
+    // 生成の進み (0 → 1)。途中の絵が無く焼き上がりの絵だけのときは 1
+    const clarity = progress.preview
+      ? Math.min(1, progress.preview.step / (progress.preview.steps ?? DEFAULT_PREVIEW_STEPS))
+      : 1;
     return (
       <>
-        <PreviewFrames src={frame} frameKey={frameKey} />
+        <PreviewFrames src={frame} frameKey={frameKey} clarity={clarity} />
+        {/* 窯の熱の明かり。粒が届いたら粒 (VesselCanvas) をそのまま見せるので、それまで */}
+        {!progress.points && <div className="firing-glow" aria-hidden="true" />}
         <div className="firing-label" role="status">
           <div className="firing-title">{t.firing}</div>
           <TempCounter

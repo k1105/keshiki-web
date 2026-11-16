@@ -43,6 +43,9 @@ const CANVAS_STYLE: React.CSSProperties = {
 // 焼成前のローポリ表示: 回転体の分割数を極端に落とし、フラットシェーディングで面を立たせる
 const LOW_POLY_RADIAL = 7; // 周方向の分割数（通常 64）
 const LOW_POLY_PROFILE = 8; // 断面の分割数（通常 48）
+// 一筆書きの形は上の分割数だと曲線が単調に見えるので、少し細かくする
+const CUSTOM_LOW_POLY_RADIAL = 12;
+const CUSTOM_LOW_POLY_PROFILE = 18;
 
 function materialParams(gloss: number, tone: number) {
   const brightness = 0.75 + (tone / 100) * 0.5;
@@ -346,12 +349,18 @@ function Vessel({
     const v = spec.profile.map(([x, y]) => new THREE.Vector2(x, y));
     if (lowPoly) {
       // 折れ線プロファイルもスプラインに通して点数を間引く
-      return new THREE.SplineCurve(v).getPoints(LOW_POLY_PROFILE);
+      return new THREE.SplineCurve(v).getPoints(
+        shape === "custom" ? CUSTOM_LOW_POLY_PROFILE : LOW_POLY_PROFILE
+      );
     }
     return spec.smooth ? new THREE.SplineCurve(v).getPoints(48) : v;
-  }, [spec, lowPoly]);
+  }, [spec, lowPoly, shape]);
 
-  const radial = lowPoly ? LOW_POLY_RADIAL : 64;
+  const radial = lowPoly
+    ? shape === "custom"
+      ? CUSTOM_LOW_POLY_RADIAL
+      : LOW_POLY_RADIAL
+    : 64;
   // 付属パーツ（取っ手・高台・蓋など）の分割数
   const seg = lowPoly
     ? { tube: 4, ring: 7, cyl: 7, sphW: 7, sphH: 4 }
@@ -443,6 +452,68 @@ function Vessel({
   );
 }
 
+// ? の形 (かたちの一覧で、一筆書きの入口のマスに出す)。ほかの器と同じローポリ・フラットシェーディング
+const QUESTION_HEIGHT = 2.2;
+const QUESTION_RADIUS = 0.2;
+const QUESTION_PATH: [number, number][] = [
+  [0, 0.66],
+  [0, 0.98],
+  [0.36, 1.3],
+  [0.5, 1.62],
+  [0.32, 1.96],
+  [0, 2.06],
+  [-0.32, 1.95],
+  [-0.48, 1.64],
+];
+const QUESTION_DOT_Y = 0.2;
+
+function QuestionMark({
+  hex,
+  gloss,
+  tone,
+  zoom,
+}: {
+  hex: string | null;
+  gloss: number;
+  tone: number;
+  zoom: number;
+}) {
+  const tube = useMemo(
+    () =>
+      new THREE.TubeGeometry(
+        new THREE.CatmullRomCurve3(QUESTION_PATH.map(([x, y]) => new THREE.Vector3(x, y, 0))),
+        12,
+        QUESTION_RADIUS,
+        6
+      ),
+    []
+  );
+  const material = useMemo(() => {
+    const params = materialParams(gloss, tone);
+    const color = new THREE.Color(hex ?? FALLBACK_HEX).multiply(params.color);
+    return new THREE.MeshPhysicalMaterial({ ...params, color, flatShading: true });
+  }, [hex, gloss, tone]);
+  useEffect(() => () => tube.dispose(), [tube]);
+  useEffect(() => () => material.dispose(), [material]);
+
+  const [sx, sy] = QUESTION_PATH[0];
+  const [ex, ey] = QUESTION_PATH[QUESTION_PATH.length - 1];
+  return (
+    <group scale={zoom} position={[0, (-QUESTION_HEIGHT * zoom) / 2, 0]}>
+      <mesh geometry={tube} material={material} />
+      {/* 線の両端をふさぐ玉と、下の点 */}
+      <mesh position={[sx, sy, 0]} material={material}>
+        <sphereGeometry args={[QUESTION_RADIUS, 6, 4]} />
+      </mesh>
+      <mesh position={[ex, ey, 0]} material={material}>
+        <sphereGeometry args={[QUESTION_RADIUS, 6, 4]} />
+      </mesh>
+      <mesh position={[0, QUESTION_DOT_Y, 0]} material={material}>
+        <sphereGeometry args={[QUESTION_RADIUS * 1.25, 6, 4]} />
+      </mesh>
+    </group>
+  );
+}
 
 /** GLTF のシーンが持つ GPU リソースを全部解放する (長時間稼働対策) */
 function disposeObject(root: THREE.Object3D) {
@@ -690,6 +761,10 @@ export type VesselCanvasProps = {
   still?: boolean;
   /** 止め絵の向き (度)。深度画像の撮影角度 (lib/depth.ts) と同じ向きの yaw。still のときだけ使う */
   stillYaw?: number;
+  /** 床の影を付けるか (既定 true)。かたちの一覧のように小さく数多く並べるときは false */
+  shadow?: boolean;
+  /** 器の代わりに出す記号。"question" は ? (かたちの一覧の一筆書きの入口) */
+  glyph?: "question";
 };
 
 export default function VesselCanvas({
@@ -710,6 +785,8 @@ export default function VesselCanvas({
   onPosed,
   still = false,
   stillYaw = 0,
+  shadow = true,
+  glyph,
 }: VesselCanvasProps) {
   // 止め絵はカメラを回せないので、最初から stillYaw の向きに置く (PoseRig と同じく器ではなくカメラを逆に回す)
   const theta = still ? (-stillYaw * Math.PI) / 180 : 0;
@@ -734,7 +811,9 @@ export default function VesselCanvas({
       <directionalLight position={[3, 5, 2]} intensity={2.2} />
       <directionalLight position={[-3, 2, -3]} intensity={0.6} />
       <PoseRig pose={pose} baseZoom={zoom} onPosed={onPosed}>
-        {glb ? (
+        {glyph === "question" ? (
+          <QuestionMark hex={hex} gloss={gloss} tone={tone} zoom={zoom} />
+        ) : glb ? (
           <GlbModel url={glb} height={vesselHeight} bottomY={bottomY + 0.02} />
         ) : points ? (
           <PointCloud data={points} height={vesselHeight} bottomY={bottomY + 0.02} hex={hex} />
@@ -747,7 +826,7 @@ export default function VesselCanvas({
             lowPoly={lowPoly}
           />
         )}
-        {!still && (
+        {!still && shadow && (
           <ContactShadows
             position={[0, bottomY, 0]}
             opacity={0.35}

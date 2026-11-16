@@ -1,5 +1,5 @@
 /*
- * Glazescape Project UI (docs/1115_Glaiz_web.pdf)
+ * Glazescape Project UI (docs/1115_Glaiz_web.pdf、修正指示は docs/1115_web.pdf)
  * デザインは 1920x1080 のアートボード。画面に収まる 16:9 のステージを中央に置き、
  * 寸法はすべて --px (アートボード上の 1px) の倍数で指定する。
  */
@@ -26,8 +26,9 @@
   --line: rgba(234, 234, 234, 0.5); /* 白細ケイ線 */
   --glaze-bg: #e0dae5; /* 釉薬選択画面の背景 */
   --glaze-shade: #e5c6f7; /* 釉薬選択画面の後ろに乗算で敷く色 */
-  /* タブパネル・レシピパネルの背景。#eaeaea の乗算と同じ結果になる黒の重ね */
-  --panel-shade: rgba(0, 0, 0, 0.082);
+  /* タブパネル・レシピパネルの背景。#eaeaea の乗算 35% と同じ結果になる黒の重ね
+     (docs/1115_web.pdf: 乗算 50% は濃いので 30〜40% に) */
+  --panel-shade: rgba(0, 0, 0, 0.029);
   /* かたちのマス・一筆書きパネルの背景 */
   --tile: rgba(236, 232, 240, 0.62);
   --fire: linear-gradient(64deg, #e26a98 0%, #e36e8c 46%, #e58a1c 100%); /* 焼成ボタン */
@@ -77,31 +78,22 @@ button:focus-visible, textarea:focus-visible, input:focus-visible {
 }
 
 /* ---------- 背景 ---------- */
-/* 全画面共通のグラデーション (左上 紫 / 上 藤色 / 右上 ベージュ / 左下 黄 / 右下 水色) */
+/* 全画面共通のグラデーション。デザインの背景画像 (docs/1115_Glaiz_web.pdf から切り出した public/bg/main.jpg) をそのまま敷く */
 .backdrop {
   position: fixed;
   inset: 0;
   overflow: hidden;
-  background:
-    radial-gradient(ellipse 52% 72% at 0% 0%, #dc9df0 0%, rgba(220, 157, 240, 0.55) 42%, transparent 100%),
-    radial-gradient(ellipse 42% 58% at 42% 0%, #bcb1ee 0%, rgba(188, 177, 238, 0.5) 45%, transparent 100%),
-    radial-gradient(ellipse 52% 70% at 100% 100%, #8ccfd6 0%, rgba(140, 207, 214, 0.55) 42%, transparent 100%),
-    radial-gradient(ellipse 48% 66% at 0% 100%, #ece2b0 0%, rgba(236, 226, 176, 0.55) 42%, transparent 100%),
-    radial-gradient(ellipse 46% 58% at 100% 0%, #efe6dc 0%, rgba(239, 230, 220, 0.5) 45%, transparent 100%),
-    #d6c2cf;
+  background: #d6c2cf url("/bg/main.jpg") center / cover no-repeat;
 }
 .backdrop > div {
   position: absolute;
   inset: 0;
 }
+/* 焼成中の背景 (同 PDF の Fire の背景画像 public/bg/firing.jpg) */
 .backdrop-firing {
   opacity: 0;
   transition: opacity 0.8s ease;
-  background:
-    radial-gradient(ellipse 44% 52% at 0% 0%, #bf7a60 0%, transparent 72%),
-    radial-gradient(ellipse 62% 58% at 100% 0%, #04141f 28%, transparent 78%),
-    radial-gradient(ellipse 62% 62% at 100% 100%, #f60305 0%, transparent 76%),
-    linear-gradient(180deg, #63304a 0%, #d2366f 50%, #ed1c7e 100%);
+  background: #a31440 url("/bg/firing.jpg") center / cover no-repeat;
 }
 .backdrop.is-firing .backdrop-firing { opacity: 1; }
 /* 焼成の熱。--heat (0 → 1, FiringPanel の温度カウンターが更新) が低いうちは黒く覆い、温度が上がるにつれて赤が出てくる */
@@ -112,12 +104,17 @@ button:focus-visible, textarea:focus-visible, input:focus-visible {
   background: #120910;
   opacity: calc(0.92 * (1 - var(--heat, 0)));
 }
-.backdrop-grain {
+/* 粒子。背景だけでなくパネルや器も含めた画面全体のいちばん上に重ねる (クリックは通す) */
+.grain {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-  opacity: 0.3;
+  opacity: 0.24;
   mix-blend-mode: soft-light;
 }
-.backdrop.is-firing .backdrop-grain { opacity: 0.4; }
+.grain.is-firing { opacity: 0.34; }
 
 /* ---------- ステージ ---------- */
 .stage {
@@ -147,7 +144,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible {
   z-index: 4;
 }
 
-/* 右ナビ (About / Jp / En / Archive / Share は JP 表示でも英語のまま) */
+/* 右ナビ (About / Create / Jp / En / Archive / Share は JP 表示でも英語のまま) */
 .rnav-item {
   position: absolute;
   font-family: var(--font-latin);
@@ -159,9 +156,11 @@ button:focus-visible, textarea:focus-visible, input:focus-visible {
   white-space: nowrap;
   z-index: 4;
 }
+/* 5 項目を上下均等に並べる */
 .rnav-item.is-about { top: calc(var(--px) * 127); }
-.rnav-item.is-lang { top: calc(var(--px) * 395); }
-.rnav-item.is-archive { top: calc(var(--px) * 664); }
+.rnav-item.is-create { top: calc(var(--px) * 328.25); }
+.rnav-item.is-lang { top: calc(var(--px) * 529.5); }
+.rnav-item.is-archive { top: calc(var(--px) * 730.75); }
 .rnav-item.is-share { top: calc(var(--px) * 932); }
 .rnav-item.is-disabled { opacity: 0.4; }
 .rnav-item.active,
@@ -191,7 +190,8 @@ button.rnav-item:hover,
   line-height: calc(var(--px) * 20);
   color: var(--sub);
 }
-.sub-hint.is-warn { color: var(--pink); }
+/* エラー表示はピンクだと読みにくいので基本文字色 */
+.sub-hint.is-warn { color: var(--ink); }
 
 /* 箱型のボタン (Next / Back / Fire / Clear / OK / Save / Try Another) */
 .btn {
@@ -219,7 +219,10 @@ button.rnav-item:hover,
   width: auto;
   height: calc(var(--px) * 34);
   padding: 0 calc(var(--px) * 22);
-  font-size: calc(var(--px) * 15);
+  /* ラベルが日本語 (選ぶ / 選び直す) なので游ゴシック。Bodoni のままだと明朝に落ちる */
+  font-family: var(--font-text);
+  font-weight: 500;
+  font-size: calc(var(--px) * 14);
 }
 /* 下端のボタン列。下端を中央パネルの下端に合わせる */
 .nav {
@@ -415,7 +418,7 @@ button.rnav-item:hover,
 .tab-panel .sub-hint { margin-top: calc(var(--px) * 14); }
 .tab-panel .sub-hint + .btn { margin-top: calc(var(--px) * 10); }
 
-/* Inspiration タブ: 罫線つきの入力欄。行送りは罫線の間隔と同じ */
+/* Inspiration タブ: 罫線 (白細ケイ線) つきの入力欄。行送りは罫線の間隔と同じ */
 .words-wrap {
   position: absolute;
   left: calc(var(--px) * 31);
@@ -446,7 +449,7 @@ button.rnav-item:hover,
   background-image: linear-gradient(
     to bottom,
     transparent calc(var(--px) * 44),
-    var(--ink) calc(var(--px) * 44)
+    var(--line) calc(var(--px) * 44)
   );
   background-size: 100% calc(var(--px) * 45);
   background-attachment: local;
@@ -491,20 +494,12 @@ button.rnav-item:hover,
   background: var(--tile);
   transition: background 0.2s ease;
 }
-.shape-cell img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  transition: opacity 0.2s ease;
-}
-.shape-cell:not(:disabled):hover { background: rgba(246, 243, 248, 0.86); }
-.shape-cell.selected {
-  background: rgba(246, 243, 248, 0.86);
-  outline: calc(var(--px) * 2) solid var(--pink);
-  outline-offset: calc(var(--px) * -2);
-}
-.shape-cell:disabled img { opacity: 0.25; }
+/* マスの中身はローポリの器の 3D 描画 (Step 2 と同じ見え方)。マス全体がボタンなので描画はクリックを受けない */
+.shape-cell .vessel-canvas { pointer-events: none; }
+/* ケイ線は付けない。マウスオーバーで背景が白くなり、選ぶと白のまま残る */
+.shape-cell:not(:disabled):hover,
+.shape-cell.selected { background: rgba(255, 255, 255, 0.82); }
+.shape-cell:disabled .vessel-canvas { opacity: 0.25; }
 
 /* 一筆書き: 9 マスと同じ位置のパネルに描く */
 .sketch-panel { background: var(--tile); }
@@ -574,7 +569,7 @@ button.rnav-item:hover,
   width: 100%;
   height: 100%;
 }
-/* 焼き上がりの絵 (背景を抜いた PNG)。器の 3D プレビューと同じ枠に出す */
+/* 焼き上がりの絵 (背景つきの正方形)。器の 3D プレビューと同じ枠に出す */
 .fired-image {
   display: block;
   width: 100%;
@@ -587,8 +582,15 @@ button.rnav-item:hover,
   mix-blend-mode: multiply;
   pointer-events: none;
 }
-/* 途中の絵から焼き上がりの絵へは、同じ位置でそのまま差し替える (ぼかしやフェードを挟まない) */
+/* 途中の絵 (窯の中の影) から焼き上がりの絵 (背景つき) へ。.viewer の遷移は使わず、
+   絵のほうを窯の中の見え方 (.firing-preview の最後のぼかし・暗さ) から浮かび上がらせて、冷めるように元の色に戻す */
 .viewer.is-swap { transition: none; }
+.viewer.is-swap .fired-image { animation: kilnOut 1.4s ease-out both; }
+@keyframes kilnOut {
+  from { opacity: 0; filter: blur(calc(var(--px) * 6)) saturate(1.4) brightness(0.55); }
+  40% { opacity: 1; }
+  to { opacity: 1; filter: blur(0) saturate(1) brightness(1); }
+}
 
 /* Inspiration: 近い釉薬の候補。器のビューの右に、候補の色を載せた器を縦に 4 つ並べる */
 .cands {
@@ -599,7 +601,9 @@ button.rnav-item:hover,
   height: var(--panel-size);
   display: grid;
   grid-template-rows: repeat(4, 1fr);
-  z-index: 1;
+  /* 器のビューの描画領域はパネルより左右にはみ出している (VesselCanvas OVERSCAN) ので、
+     その上に置かないとマウスオーバーとクリックが器のビューに取られる */
+  z-index: 2;
 }
 .cand {
   position: relative;
@@ -610,9 +614,9 @@ button.rnav-item:hover,
   transition: background 0.2s ease;
 }
 .cand:hover { background: rgba(234, 234, 234, 0.25); }
+/* 選択中は元からある白細ケイ線 (透明度 50%) を 100% にする */
 .cand.active {
-  outline: calc(var(--px) * 2) solid var(--pink);
-  outline-offset: calc(var(--px) * -2);
+  outline-color: var(--btn);
   z-index: 1;
 }
 /* 器の描画はクリックを受けない (マス全体がボタン) */
@@ -648,6 +652,8 @@ button.rnav-item:hover,
   font-variant-numeric: tabular-nums;
   color: #ec86b0;
 }
+/* 生成途中の絵は、窯の中の器の影として見せる。ローポリの器 (.viewer.is-firing) と同じ
+   ぼかし + 乗算から始め、生成が進む (--clarity 0 → 1) につれて少しずつ輪郭と明るさが出る */
 .firing-preview {
   position: absolute;
   left: var(--panel-x);
@@ -656,6 +662,12 @@ button.rnav-item:hover,
   height: var(--panel-size);
   z-index: 2;
   pointer-events: none;
+  mix-blend-mode: multiply;
+  filter:
+    blur(calc(var(--px) * (16 - 10 * var(--clarity, 0))))
+    saturate(1.4)
+    brightness(calc(0.6 + 0.25 * var(--clarity, 0)));
+  transition: filter 3.2s linear;
 }
 .firing-preview img {
   position: absolute;
@@ -664,10 +676,45 @@ button.rnav-item:hover,
   height: 100%;
   object-fit: cover;
 }
-.firing-preview img.is-in { animation: frameIn 0.8s ease both; }
+/* 絵の差し替えは、次の絵が届く間隔 (約 3 秒) に近い長さで重ねて、切り替わりを見せない。
+   最初の 1 枚だけはローポリの器が消える速さ (.viewer の opacity 0.8s) に合わせる */
+.firing-preview img.is-in { animation: frameIn 2.6s ease-in-out both; }
+.firing-preview img.is-in.is-first { animation-duration: 0.8s; }
 @keyframes frameIn {
   from { opacity: 0; }
   to { opacity: 1; }
+}
+/* 窯の熱の明かり。温度 (--heat 0 → 1) とともに明るくなる (明滅はしない)。
+   器の手前に重ねて、器を窯の中に沈める。中心はパネル (= ステージ) の中央 */
+.firing-glow {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  opacity: var(--heat, 0);
+}
+.firing-glow::before,
+.firing-glow::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+.firing-glow::before {
+  background: radial-gradient(
+    ellipse 34% 52% at 50% 56%,
+    rgba(255, 168, 84, 0.5) 0%,
+    rgba(250, 92, 48, 0.24) 46%,
+    transparent 100%
+  );
+}
+.firing-glow::after {
+  background: radial-gradient(
+    ellipse 22% 34% at 50% 62%,
+    rgba(255, 214, 150, 0.38) 0%,
+    rgba(255, 140, 70, 0.14) 52%,
+    transparent 100%
+  );
 }
 /* 進捗: 工程ごとのコマ。終わったコマは白、今のコマは明滅、先のコマは薄い */
 .firing-steps {
@@ -742,10 +789,10 @@ button.rnav-item:hover,
   white-space: pre-wrap;
   word-break: break-all;
 }
-/* ゼーゲル式: 3 列。成分名と値を並べる */
+/* ゼーゲル式: 3 列。成分名と値を並べる。2 列目の左端は、ほかの行の値の左端 (key 88 + gap 12) に揃える */
 .recipe-cols {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: calc(var(--px) * 100) 1fr 1fr;
 }
 .recipe-cols .recipe-row { gap: 0; }
 .recipe-cols .recipe-row .key { width: calc(var(--px) * 45); }
@@ -797,23 +844,36 @@ button.rnav-item:hover,
   font-weight: 500;
   font-size: calc(var(--px) * 56);
   letter-spacing: 0.05em;
-  white-space: nowrap;
+  white-space: pre;
+}
+/* タイトルの文字は 1 文字ずつばらばらの順に現れる (順番は app/page.tsx TITLE_ORDER) */
+.title-screen span {
+  opacity: 0;
+  animation: titleIn 0.7s ease-out both;
+}
+@keyframes titleIn {
+  from { opacity: 0; filter: blur(calc(var(--px) * 6)); }
+  to { opacity: 1; filter: blur(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .title-screen span { animation: none; opacity: 1; }
 }
 
 /* ---------- ABOUT ---------- */
+/* 見出しから本文の終わりまでを中央パネルの範囲 (上 183 〜 下 917) に収める。文字は基本文字色 */
 .about {
   position: absolute;
   left: var(--panel-x);
-  top: calc(var(--px) * 194);
+  top: calc(var(--px) * 183);
   width: var(--panel-size);
-  color: var(--sub);
+  color: var(--ink);
   user-select: text;
 }
 .about h1 {
   display: inline-block;
-  margin: 0 0 calc(var(--px) * 48);
+  margin: 0 0 calc(var(--px) * 34);
   padding-bottom: calc(var(--px) * 3);
-  border-bottom: 1px solid var(--sub);
+  border-bottom: 1px solid var(--ink);
   font-size: calc(var(--px) * 23);
   font-weight: 500;
   line-height: calc(var(--px) * 36);
@@ -821,9 +881,9 @@ button.rnav-item:hover,
 }
 .about h1 span { display: block; }
 .about p {
-  margin: 0 0 calc(var(--px) * 36);
-  font-size: calc(var(--px) * 16.7);
-  line-height: calc(var(--px) * 36);
+  margin: 0 0 calc(var(--px) * 26);
+  font-size: calc(var(--px) * 18.5);
+  line-height: calc(var(--px) * 30);
   letter-spacing: 0.08em;
   text-align: justify;
 }
