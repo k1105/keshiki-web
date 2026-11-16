@@ -1,9 +1,9 @@
 "use client";
 
 // Step-2B「釉薬から選ぶ」のモーダル。
-// 左: 気になる釉薬を選ぶ。今の選択と組み合わせたデータが無いものは薄く見せて選べなくする。
+// 左: 気になる釉薬を選ぶ。今の選択と組み合わせたデータが無いものはグレー文字にして選べなくする。
 // 右: 現在の素地・焼成雰囲気で、選んだ釉薬を含む実在の組み合わせを候補として並べる (未選択のときは非表示)。
-// 候補を 1 つ選んで「決定」すると、その組み合わせが確定版 (glazeCombo) になる。
+// 候補を 1 つ選んで OK を押すと、その組み合わせが確定版 (glazeCombo) になる。
 // 確定版は必ず実在の組み合わせになる。
 
 import { useEffect, useMemo, useState } from "react";
@@ -100,27 +100,23 @@ export default function GlazePicker({
   const pickSet = new Set(picks);
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div
-        className="glaze-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-label={t.glazeModalTitle}
-        onClick={(e) => e.stopPropagation()}
-      >
+    <>
+      {/* 後ろの画面に乗算で敷く色。押すと閉じる */}
+      <div className="glaze-shade" onClick={onClose} />
+      <div className="glaze-modal" role="dialog" aria-modal="true" aria-label={t.glazeModalTitle}>
         <div className="glaze-modal-head">
-          <span>{t.glazeModalTitle}</span>
+          <span className="glaze-modal-title">{t.glazeModalTitle}</span>
+          <span className="glaze-modal-hint">{t.glazeHint}</span>
           <CloseButton label={t.glazeClose} onClick={onClose} />
         </div>
 
         <div className="glaze-modal-body">
           <div className="glaze-picks">
-            <div className="sub-hint">{t.glazeHint}</div>
             {/* カテゴリは開閉せず、すべて開いた状態で並べる */}
             {GLAZE_CATEGORIES.map((cat) => (
               <div key={cat.key} className="glaze-cat">
                 <div className="glaze-cat-h">{lang === "en" ? cat.en : cat.ja}</div>
-                <div className="items is-inline">
+                <div className="chips">
                   {cat.styles.map((s) => {
                     const picked = pickSet.has(s.code);
                     const dim = !picked && available !== null && !available.has(s.code);
@@ -128,11 +124,12 @@ export default function GlazePicker({
                       <button
                         key={s.code}
                         type="button"
-                        className={`item ${picked ? "active" : ""} ${dim ? "is-dim" : ""}`}
+                        className={`chip ${picked ? "active" : ""}`}
                         disabled={dim}
+                        aria-pressed={picked}
                         onClick={() => onTogglePick(s.code)}
                       >
-                        -{lang === "en" ? s.en : s.ja}
+                        {lang === "en" ? s.en : s.ja}
                       </button>
                     );
                   })}
@@ -143,8 +140,7 @@ export default function GlazePicker({
 
           {/* 釉薬を 1 つも選んでいないときは候補を出さない */}
           {picks.length > 0 && (
-            <div className="glaze-cands">
-              <div className="glaze-cands-title">{t.glazeCandidates}</div>
+            <div className="glaze-cands" aria-label={t.glazeCandidates}>
               {hint && <div className="sub-hint">{hint}</div>}
               <div className="glaze-cand-list">
                 {visible.map((c) => {
@@ -162,14 +158,7 @@ export default function GlazePicker({
                         style={c.hex ? { background: c.hex } : undefined}
                       />
                       <span className="glaze-cand-names">
-                        {c.codes.map((code, i) => (
-                          <span key={code}>
-                            {i > 0 && (lang === "en" ? ", " : "、")}
-                            <span className={pickSet.has(code) ? "is-pick" : ""}>
-                              {glazeName(code, lang)}
-                            </span>
-                          </span>
-                        ))}
+                        {glazeComboLabel(c.codes, lang)}
                       </span>
                       <span className="glaze-cand-count">{t.glazeCount(c.count)}</span>
                     </button>
@@ -185,25 +174,25 @@ export default function GlazePicker({
           {/* モーダル内の選択 (気になる釉薬・候補のハイライト) を最初の状態に戻す。確定済みの組み合わせは決定するまで変えない */}
           <button
             type="button"
-            className="link"
+            className="btn is-dark"
             disabled={picks.length === 0 && !draft}
             onClick={() => {
               setDraft(null);
               onClearPicks();
             }}
           >
-            {t.glazeClear}
+            {t.clear}
           </button>
           <button
             type="button"
-            className="link"
+            className="btn is-dark"
             disabled={!draft}
             onClick={() => draft && onConfirm(draft)}
           >
-            {t.glazeConfirm}
+            {t.ok}
           </button>
         </div>
       </div>
-    </div>
+    </>
   );
 }

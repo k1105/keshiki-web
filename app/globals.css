@@ -1,52 +1,59 @@
-.backdrop-title {
-  background:
-    radial-gradient(ellipse 30% 70% at 46% 0%, #a9f7cb 0%, rgba(169, 247, 203, 0.6) 45%, transparent 100%),
-    radial-gradient(ellipse 50% 95% at 100% 15%, #f4f58b 0%, rgba(244, 245, 139, 0.75) 45%, transparent 100%),
-    radial-gradient(ellipse 30% 40% at 100% 100%, #f5f5f3 0%, transparent 100%),
-    radial-gradient(ellipse 50% 45% at 45% 100%, #f6e4a9 0%, transparent 100%),
-    linear-gradient(180deg, #f3c9f5 0%, #f6cbdc 50%, #f6cac5 100%);
-}
 /*
- * Glazescape Project UI (docs/1002_Glaiz_web.pdf)
+ * Glazescape Project UI (docs/1115_Glaiz_web.pdf)
  * デザインは 1920x1080 のアートボード。画面に収まる 16:9 のステージを中央に置き、
  * 寸法はすべて --px (アートボード上の 1px) の倍数で指定する。
  */
 :root {
   --px: min(100vw / 1920, 100vh / 1080);
-  /* 背景グリッドの 1 マスと、ステージ原点からのずれ */
+  /* 中央パネル (かたちの 9 マス・器のビュー・一筆書き) の 1 辺の 1/9 */
   --u: calc(var(--px) * 92.16);
-  --grid-x: calc(var(--px) * 83.5);
-  --grid-y: calc(var(--px) * 31.7);
-  /* 文字物はこのグリッド線に揃える。
-     --col-x: ロゴ・左カラム・NEXT の左端 (縦線 0 本目)
-     --rnav-right: 右ナビの右端 (縦線 19 本目) を right で指定した値
-     --inset: 見出し文字をグリッド線から下げる量 */
-  --col-x: var(--grid-x);
-  --rnav-right: calc(var(--px) * 1920 - var(--grid-x) - var(--u) * 19);
-  --inset: calc(var(--px) * 14);
+  /* --col-x: ロゴ・左カラム・下端ボタンの左端 / --col-w: 左カラムの幅 / --rnav-right: 右ナビの右端 */
+  --col-x: calc(var(--px) * 124.5);
+  --col-w: calc(var(--px) * 382);
+  --rnav-right: calc(var(--px) * 125);
+  --panel-x: calc(var(--px) * 544.3);
+  --panel-y: calc(var(--px) * 123.9);
+  --panel-size: calc(var(--u) * 9);
 
-  --ink: #38204b;
-  --pink: #fc3f9a;
-  --line: rgba(255, 255, 255, 0.55);
+  /* カラーパレット */
+  --ink: #39224c; /* 基本文字色 */
+  --sub: #5c4b6d; /* サンプルテキスト・注釈・About・件数 */
+  --grey: #9f98a8; /* 釉薬選択画面のグレー文字 */
+  --pink: #e26a98; /* カーソル・強調文字・強調ボタン */
+  --btn: #eaeaea; /* 釉薬選択画面のボタン背景 */
+  --btn-half: rgba(234, 234, 234, 0.5); /* Back / Next ボタン・タブ */
+  --btn-dark: #beb9c1; /* パネル上の Clear / OK ボタン */
+  --line: rgba(234, 234, 234, 0.5); /* 白細ケイ線 */
+  --glaze-bg: #e0dae5; /* 釉薬選択画面の背景 */
+  --glaze-shade: #e5c6f7; /* 釉薬選択画面の後ろに乗算で敷く色 */
+  /* タブパネル・レシピパネルの背景。#eaeaea の乗算と同じ結果になる黒の重ね */
+  --panel-shade: rgba(0, 0, 0, 0.082);
+  /* かたちのマス・一筆書きパネルの背景 */
+  --tile: rgba(236, 232, 240, 0.62);
+  --fire: linear-gradient(64deg, #e26a98 0%, #e36e8c 46%, #e58a1c 100%); /* 焼成ボタン */
 
-  /* Adobe Fonts (app/layout.tsx で読み込み)。英字 LoRes 9 OT Narrow、日本語 游ゴシック Pr6N */
-  --font-latin: "lores-9-narrow", "yu-gothic-pr6n", sans-serif;
+  /* Adobe Fonts (app/layout.tsx で読み込み)。英字 Bodoni URW (ロゴは Medium、ほかは Regular)、日本語 游ゴシック Pr6N */
+  --font-latin: "bodoni-urw", "Bodoni 72", "Didot", serif;
   --font-jp: "yu-gothic-pr6n", "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Yu Gothic", sans-serif;
-  /* UI の書体。EN 表示は LoRes、JP 表示は游ゴシックに統一する (下の :lang(ja) で切り替え) */
-  --font-pixel: var(--font-latin);
+  /* 説明文・本文の書体。JP 表示は游ゴシック、EN 表示は Bodoni (下の :lang(en) で切り替え)。
+     見出し・タブ・ボタン・右ナビは言語に関わらず英語表記で、--font-latin を直接指定する */
   --font-text: var(--font-jp);
 
-  /* ピンクの十字カーソル */
-  --cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 7 7' shape-rendering='crispEdges'%3E%3Cpath fill='%23fc3f9a' d='M2 0h3v2h2v3H5v2H2V5H0V2h2z'/%3E%3C/svg%3E") 14 14, crosshair;
+  /* ピンクの細い十字カーソル */
+  --cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='30' height='30' viewBox='0 0 30 30'%3E%3Cpath d='M15 2v26M2 15h26' fill='none' stroke='%23e26a98' stroke-width='2.5'/%3E%3C/svg%3E") 15 15, crosshair;
+}
+:root:lang(en) {
+  --font-text: var(--font-latin);
 }
 
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
 body {
-  background: #ddd0d6;
+  background: #d6c3cf;
   color: var(--ink);
-  font-family: var(--font-pixel);
-  font-size: calc(var(--px) * 20);
+  font-family: var(--font-text);
+  font-weight: 500;
+  font-size: calc(var(--px) * 14);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   cursor: var(--cursor);
@@ -70,39 +77,32 @@ button:focus-visible, textarea:focus-visible, input:focus-visible {
 }
 
 /* ---------- 背景 ---------- */
+/* 全画面共通のグラデーション (左上 紫 / 上 藤色 / 右上 ベージュ / 左下 黄 / 右下 水色) */
 .backdrop {
   position: fixed;
   inset: 0;
   overflow: hidden;
   background:
-    radial-gradient(ellipse 45% 70% at 0% 100%, #f0cfd1 0%, transparent 70%),
-    linear-gradient(100deg, #e6d0d5 0%, #dbd0d7 40%, #d0d0d9 100%);
+    radial-gradient(ellipse 52% 72% at 0% 0%, #dc9df0 0%, rgba(220, 157, 240, 0.55) 42%, transparent 100%),
+    radial-gradient(ellipse 42% 58% at 42% 0%, #bcb1ee 0%, rgba(188, 177, 238, 0.5) 45%, transparent 100%),
+    radial-gradient(ellipse 52% 70% at 100% 100%, #8ccfd6 0%, rgba(140, 207, 214, 0.55) 42%, transparent 100%),
+    radial-gradient(ellipse 48% 66% at 0% 100%, #ece2b0 0%, rgba(236, 226, 176, 0.55) 42%, transparent 100%),
+    radial-gradient(ellipse 46% 58% at 100% 0%, #efe6dc 0%, rgba(239, 230, 220, 0.5) 45%, transparent 100%),
+    #d6c2cf;
 }
 .backdrop > div {
   position: absolute;
   inset: 0;
 }
-.backdrop-title,
 .backdrop-firing {
   opacity: 0;
   transition: opacity 0.8s ease;
-}
-.backdrop-title {
-  background:
-    radial-gradient(ellipse 42% 62% at 50% 0%, #a9f7cb 0%, transparent 72%),
-    radial-gradient(ellipse 46% 78% at 100% 18%, #f4f58b 0%, transparent 76%),
-    radial-gradient(ellipse 34% 46% at 100% 100%, #f5f5f3 0%, transparent 72%),
-    radial-gradient(ellipse 50% 50% at 52% 100%, #f6e4a9 0%, transparent 76%),
-    linear-gradient(180deg, #f3c9f5 0%, #f6cbdc 50%, #f6cac5 100%);
-}
-.backdrop-firing {
   background:
     radial-gradient(ellipse 44% 52% at 0% 0%, #bf7a60 0%, transparent 72%),
     radial-gradient(ellipse 62% 58% at 100% 0%, #04141f 28%, transparent 78%),
     radial-gradient(ellipse 62% 62% at 100% 100%, #f60305 0%, transparent 76%),
     linear-gradient(180deg, #63304a 0%, #d2366f 50%, #ed1c7e 100%);
 }
-.backdrop.is-title .backdrop-title,
 .backdrop.is-firing .backdrop-firing { opacity: 1; }
 /* 焼成の熱。--heat (0 → 1, FiringPanel の温度カウンターが更新) が低いうちは黒く覆い、温度が上がるにつれて赤が出てくる */
 .backdrop-firing::after {
@@ -112,24 +112,9 @@ button:focus-visible, textarea:focus-visible, input:focus-visible {
   background: #120910;
   opacity: calc(0.92 * (1 - var(--heat, 0)));
 }
-
-/* ステージ原点に合わせた大グリッド。タイトル・焼成中は出さない */
-.backdrop-grid {
-  background-image:
-    linear-gradient(to right, var(--line) 0, var(--line) 1px, transparent 1px),
-    linear-gradient(to bottom, var(--line) 0, var(--line) 1px, transparent 1px);
-  background-size: var(--u) var(--u);
-  background-position:
-    calc(50vw - var(--px) * 960 + var(--grid-x))
-    calc(50vh - var(--px) * 540 + var(--grid-y));
-  transition: opacity 0.8s ease;
-}
-.backdrop.is-title .backdrop-grid,
-.backdrop.is-firing .backdrop-grid { opacity: 0; }
-
 .backdrop-grain {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-  opacity: 0.22;
+  opacity: 0.3;
   mix-blend-mode: soft-light;
 }
 .backdrop.is-firing .backdrop-grain { opacity: 0.4; }
@@ -148,44 +133,36 @@ button:focus-visible, textarea:focus-visible, input:focus-visible {
 }
 .flow[hidden] { display: none; }
 
+/* ロゴ (Bodoni URW Medium) */
 .logo {
   position: absolute;
   left: var(--col-x);
-  top: calc(var(--grid-y) + var(--u));
-  width: calc(var(--px) * 186.75);
-  height: calc(var(--px) * 46.75);
-  z-index: 4;
-}
-.logo-mark {
-  display: block;
-  width: 100%;
-  height: 100%;
-  fill: currentColor;
-  shape-rendering: crispEdges;
-}
-
-/* JP 表示: 英数字も含めて游ゴシックで統一し、LoRes との混植はしない。
-   英語のまま出す要素 (ロゴは SVG、右ナビ・下端ナビは個別に指定) だけ LoRes のまま */
-:root:lang(ja) {
-  --font-pixel: var(--font-jp);
-}
-
-/* 右ナビ (ABOUT / EN / JP / ARCHIVE / SHARE は JP 表示でも英語のまま) */
-.rnav-item {
-  position: absolute;
+  top: calc(var(--px) * 118);
   font-family: var(--font-latin);
-  right: var(--rnav-right);
-  font-size: calc(var(--px) * 21);
-  line-height: calc(var(--px) * 24);
-  letter-spacing: 0.14em;
+  font-weight: 500;
+  font-size: calc(var(--px) * 30);
+  line-height: calc(var(--px) * 40);
+  letter-spacing: 0.05em;
   white-space: nowrap;
   z-index: 4;
 }
-/* 横線 1・4・7 本目の下に置き、SHARE は下端をパネル下端 (横線 10 本目) に合わせる */
-.rnav-item.is-about { top: calc(var(--grid-y) + var(--u) * 1 + var(--inset)); }
-.rnav-item.is-lang { top: calc(var(--grid-y) + var(--u) * 4 + var(--inset)); }
-.rnav-item.is-archive { top: calc(var(--grid-y) + var(--u) * 7 + var(--inset)); }
-.rnav-item.is-share { top: calc(var(--grid-y) + var(--u) * 10 - var(--px) * 24); }
+
+/* 右ナビ (About / Jp / En / Archive / Share は JP 表示でも英語のまま) */
+.rnav-item {
+  position: absolute;
+  font-family: var(--font-latin);
+  font-weight: 400;
+  right: var(--rnav-right);
+  font-size: calc(var(--px) * 16);
+  line-height: calc(var(--px) * 24);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  z-index: 4;
+}
+.rnav-item.is-about { top: calc(var(--px) * 127); }
+.rnav-item.is-lang { top: calc(var(--px) * 395); }
+.rnav-item.is-archive { top: calc(var(--px) * 664); }
+.rnav-item.is-share { top: calc(var(--px) * 932); }
 .rnav-item.is-disabled { opacity: 0.4; }
 .rnav-item.active,
 .rnav-item .active { color: var(--pink); }
@@ -193,186 +170,117 @@ button.rnav-item:hover,
 .rnav-item button:hover { color: var(--pink); }
 
 /* ---------- 左カラム ---------- */
-.col {
+/* ステップ見出し (1. Select Form / 2. Select Look / Recipe)。文字幅ぶんの下線を引く */
+.section-title {
   position: absolute;
   left: var(--col-x);
-  top: calc(var(--grid-y) + var(--u) * 2);
-  width: calc(var(--px) * 360);
+  top: calc(var(--px) * 226);
+  margin: 0;
+  padding: 0 0 calc(var(--px) * 1);
+  border-bottom: 1px solid var(--ink);
+  font-family: var(--font-latin);
+  font-weight: 400;
+  font-size: calc(var(--px) * 30);
+  line-height: calc(var(--px) * 36);
+  letter-spacing: 0.03em;
+  white-space: nowrap;
   z-index: 2;
 }
-.group { margin-bottom: calc(var(--px) * 72); }
-/* Step 1 の項目はグリッドのマス数で高さを決め、見出しが毎回グリッド線の --inset 下に来るようにする */
-.group.is-u1,
-.group.is-u2 { margin-bottom: 0; }
-.group.is-u1 { height: var(--u); }
-.group.is-u2 { height: calc(var(--u) * 2); }
-.h {
-  display: block;
-  font-size: calc(var(--px) * 28);
-  font-weight: 500;
-  line-height: calc(var(--px) * 30);
-  letter-spacing: 0.1em;
-  white-space: nowrap;
-}
-button.h:hover,
-.h.active { color: var(--pink); }
-.h.is-dim { opacity: 0.4; }
-.h.is-dim:hover { opacity: 1; }
-/* 前の項目を選ぶまで使えない見出し (ホバーしても濃くならない) */
-.h.is-locked { opacity: 0.4; }
-.form-hint { margin-top: calc(var(--px) * 10); }
-/* ステップ見出し (1. ベースを選ぶ / 2. 見た目を選ぶ)。項目の見出し (.h) より大きく、下に罫線を引いて区別する。
-   高さをグリッド 1 マスにし、罫線が横線 3 本目に重なるようにする */
-.col .section-title {
-  display: flex;
-  align-items: baseline;
-  gap: calc(var(--px) * 14);
-  height: var(--u);
-  margin: 0 0 var(--inset);
-  padding: calc(var(--u) - var(--px) * 56) 0 calc(var(--px) * 14);
-  border-bottom: calc(var(--px) * 2) solid var(--ink);
-  font-size: calc(var(--px) * 36);
-  font-weight: 500;
-  line-height: calc(var(--px) * 40);
-  letter-spacing: 0.1em;
-  white-space: nowrap;
-}
-.col .section-title .step-no { font-family: var(--font-latin); }
-.items { margin-top: calc(var(--px) * 14); }
-.item {
-  display: block;
-  font-size: calc(var(--px) * 21);
-  line-height: calc(var(--px) * 30);
-  letter-spacing: 0.06em;
-  white-space: nowrap;
-}
-.item:hover,
-.item.active { color: var(--pink); }
-/* 現在の選択との組み合わせがデータに無い釉薬 */
-.item:disabled { opacity: 0.3; color: inherit; cursor: default; }
-.item.is-dim { opacity: 0.3; }
-.item.is-dim:not(:disabled):hover { opacity: 1; }
-.items.is-inline {
-  display: flex;
-  flex-wrap: wrap;
-  column-gap: calc(var(--px) * 16);
-  margin-top: calc(var(--px) * 2);
-}
-.items.is-inline .item {
-  font-size: calc(var(--px) * 19);
-  line-height: calc(var(--px) * 27);
-}
-.subs { margin-top: calc(var(--px) * 12); }
 .sub-hint {
-  margin-bottom: calc(var(--px) * 6);
-  font-family: var(--font-text);
   font-size: calc(var(--px) * 12);
-  line-height: calc(var(--px) * 18);
-  white-space: nowrap;
-  opacity: 0.6;
+  line-height: calc(var(--px) * 20);
+  color: var(--sub);
 }
-/* 色相環は左カラムの幅いっぱい (360px) */
-.subs > .color-wheel-wrapper {
-  width: calc(var(--px) * 360);
-  height: calc(var(--px) * 360);
-  margin-top: calc(var(--px) * 10);
-}
+.sub-hint.is-warn { color: var(--pink); }
 
-/* ---------- 中央パネル下部のオプション (Step 2 見た目: 表面・透明度・質感) ---------- */
-.panel-options {
-  position: absolute;
-  left: calc(var(--grid-x) + var(--u) * 5);
-  width: calc(var(--u) * 9);
-  /* パネル下端 (横線 10 本目) に下詰め */
-  bottom: calc(var(--px) * 1080 - var(--grid-y) - var(--u) * 10);
+/* 箱型のボタン (Next / Back / Fire / Clear / OK / Save / Try Another) */
+.btn {
   display: flex;
-  flex-direction: column;
-  gap: calc(var(--px) * 2);
-  padding: 0 var(--inset) var(--inset);
-  z-index: 3;
-}
-.opt-row {
-  display: flex;
-  flex-wrap: wrap;
-  column-gap: calc(var(--px) * 20);
-  font-size: calc(var(--px) * 16);
-  line-height: calc(var(--px) * 26);
-  letter-spacing: 0.06em;
-}
-/* チェックボックス風。選択中は箱がピンクに塗られる */
-.opt {
-  display: inline-flex;
   align-items: center;
-  gap: calc(var(--px) * 8);
+  justify-content: center;
+  width: calc(var(--px) * 186.5);
+  height: calc(var(--px) * 48);
+  background: var(--btn-half);
+  font-family: var(--font-latin);
+  font-weight: 400;
+  font-size: calc(var(--px) * 18);
+  line-height: 1;
+  letter-spacing: 0.03em;
   white-space: nowrap;
+  transition: background 0.2s ease, color 0.2s ease, opacity 0.2s ease;
 }
-.opt-box {
-  flex: none;
-  width: calc(var(--px) * 14);
-  height: calc(var(--px) * 14);
-  border: calc(var(--px) * 1.5) solid currentColor;
+.btn:not(:disabled):hover { color: var(--pink); background: rgba(234, 234, 234, 0.8); }
+.btn:disabled { opacity: 0.4; }
+.btn.is-dark { background: var(--btn-dark); }
+.btn.is-dark:not(:disabled):hover { background: #cdc8d0; }
+.btn.is-fire { background: var(--fire); }
+.btn.is-fire:not(:disabled):hover { color: #fff; background: var(--fire); }
+.btn.is-small {
+  width: auto;
+  height: calc(var(--px) * 34);
+  padding: 0 calc(var(--px) * 22);
+  font-size: calc(var(--px) * 15);
 }
-.opt:hover,
-.opt.active { color: var(--pink); }
-.opt.active .opt-box { background: var(--pink); }
-.col.is-accordion .subs { margin-top: calc(var(--px) * 6); }
-/* Step 2: 開いていない選び方は級数を落として横並び */
-.mode-alts {
-  display: flex;
-  flex-wrap: wrap;
-  column-gap: calc(var(--px) * 20);
-  margin-top: calc(var(--px) * 6);
-}
-.mode-alt {
-  font-size: calc(var(--px) * 19);
-  line-height: calc(var(--px) * 30);
-  letter-spacing: 0.06em;
-  white-space: nowrap;
-}
-.mode-alt:hover { color: var(--pink); }
-.col.is-accordion .group { margin-bottom: calc(var(--px) * 20); }
-
-.subtabs {
-  margin-top: calc(var(--px) * 14);
-  font-size: calc(var(--px) * 21);
-  line-height: calc(var(--px) * 30);
-  letter-spacing: 0.06em;
-  white-space: nowrap;
-}
-.subtabs button:hover,
-.subtabs button.active { color: var(--pink); }
-
-/* 下端のナビ (BACK / NEXT / FIRE)。JP 表示でも英語表記なので欧文書体 (LoRes) で出す */
+/* 下端のボタン列。下端を中央パネルの下端に合わせる */
 .nav {
   position: absolute;
-  font-family: var(--font-latin);
   left: var(--col-x);
-  /* 文字の下端をパネル下端 (横線 10 本目) に合わせる */
-  top: calc(var(--grid-y) + var(--u) * 10 - var(--px) * 32);
+  top: calc(var(--px) * 905.3);
   display: flex;
-  align-items: center;
-  gap: calc(var(--px) * 12);
-  font-size: calc(var(--px) * 28);
-  font-weight: 500;
-  line-height: calc(var(--px) * 32);
-  letter-spacing: 0.12em;
-  white-space: nowrap;
+  gap: calc(var(--px) * 9);
   z-index: 4;
 }
-.link {
-  display: inline-flex;
+
+/* Step 2: 選び方のタブ (Color / Glaze / Inspiration) とその中身 */
+.lookbox {
+  position: absolute;
+  left: var(--col-x);
+  top: calc(var(--px) * 306);
+  width: var(--col-w);
+  height: calc(var(--px) * 542);
+  display: flex;
+  flex-direction: column;
+  z-index: 2;
+}
+.tabs {
+  flex: none;
+  display: flex;
+  align-items: flex-start;
+  gap: calc(var(--px) * 3);
+  height: calc(var(--px) * 44);
+}
+.tab {
+  flex: 1;
+  height: calc(var(--px) * 41);
+  background: var(--btn-half);
+  font-family: var(--font-latin);
+  font-weight: 400;
+  font-size: calc(var(--px) * 18);
+  line-height: 1;
+  letter-spacing: 0.03em;
+  text-align: center;
+  white-space: nowrap;
+  transition: color 0.2s ease;
+}
+.tab:hover { color: var(--pink); }
+/* 開いているタブは下のパネルとひと続きになる */
+.tab.active {
+  height: calc(var(--px) * 44);
+  background: var(--panel-shade);
+}
+.tab.active:hover { color: inherit; }
+.tab-panel {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  background: var(--panel-shade);
+}
+.tab-panel.is-center {
+  display: flex;
   align-items: center;
-  gap: calc(var(--px) * 10);
+  justify-content: center;
 }
-.link:hover { color: var(--pink); }
-.link:disabled { opacity: 0.35; color: inherit; }
-.arrow {
-  width: calc(var(--px) * 20);
-  height: calc(var(--px) * 20);
-  fill: currentColor;
-  shape-rendering: crispEdges;
-}
-.arrow.is-left { transform: scaleX(-1); }
+.tab-panel.is-pad { padding: calc(var(--px) * 30) calc(var(--px) * 31); }
 
 /* スライダー */
 .slider {
@@ -435,29 +343,30 @@ button.h:hover,
 /* 色相環 */
 .color-wheel-wrapper {
   position: relative;
-  width: calc(var(--px) * 214);
-  height: calc(var(--px) * 214);
-  margin-top: calc(var(--px) * 12);
+  width: calc(var(--px) * 298);
+  height: calc(var(--px) * 298);
 }
 .color-wheel {
   display: block;
   width: 100%;
   height: 100%;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.62);
+  background: rgba(240, 236, 240, 0.86);
 }
 .wheel-filter {
   position: absolute;
-  font-size: calc(var(--px) * 16);
-  line-height: calc(var(--px) * 20);
-  letter-spacing: 0.06em;
+  font-family: var(--font-latin);
+  font-weight: 400;
+  font-size: calc(var(--px) * 17);
+  line-height: calc(var(--px) * 22);
+  letter-spacing: 0.03em;
   white-space: nowrap;
 }
 .wheel-filter:hover,
 .wheel-filter.active { color: var(--pink); }
-.wheel-filter.is-light { top: calc(var(--px) * 6); left: 50%; transform: translateX(-50%); }
+.wheel-filter.is-light { top: calc(var(--px) * 10); left: 50%; transform: translateX(-50%); }
 .wheel-filter.is-dark { bottom: calc(var(--px) * 6); left: 50%; transform: translateX(-50%); }
-.wheel-filter.is-all { left: calc(var(--px) * 10); top: 50%; transform: translateY(-50%); }
+.wheel-filter.is-all { left: calc(var(--px) * 14); top: 50%; transform: translateY(-50%); }
 .wheel-filter.is-medium { right: calc(var(--px) * 10); top: 50%; transform: translateY(-50%); }
 
 .color-tooltip {
@@ -483,59 +392,90 @@ button.h:hover,
 }
 .color-tooltip .tooltip-id,
 .color-tooltip .tooltip-hex {
-  font-size: calc(var(--px) * 13);
+  font-size: calc(var(--px) * 12);
   line-height: calc(var(--px) * 16);
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
 }
 
-/* 言葉でつくる: 罫線つきの入力欄 */
+/* Glaze タブ: 確定した釉薬の組み合わせ */
+.glaze-combo {
+  margin-bottom: calc(var(--px) * 18);
+  font-size: calc(var(--px) * 15);
+  line-height: calc(var(--px) * 26);
+  letter-spacing: 0.04em;
+}
+.glaze-combo.is-none { color: var(--sub); }
+.glaze-combo-swatch {
+  display: inline-block;
+  width: calc(var(--px) * 30);
+  height: calc(var(--px) * 14);
+  margin-right: calc(var(--px) * 10);
+  vertical-align: middle;
+}
+.tab-panel .sub-hint { margin-top: calc(var(--px) * 14); }
+.tab-panel .sub-hint + .btn { margin-top: calc(var(--px) * 10); }
+
+/* Inspiration タブ: 罫線つきの入力欄。行送りは罫線の間隔と同じ */
+.words-wrap {
+  position: absolute;
+  left: calc(var(--px) * 31);
+  top: calc(var(--px) * 26);
+  width: calc(var(--px) * 320);
+  height: calc(var(--px) * 405);
+}
+.words,
+.words-placeholder {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-text);
+  font-weight: 500;
+  font-size: calc(var(--px) * 13);
+  line-height: calc(var(--px) * 45);
+}
 .words {
   display: block;
-  width: calc(var(--px) * 328);
-  height: calc(var(--px) * 230);
-  margin-top: calc(var(--px) * 12);
-  padding: 0;
+  width: 100%;
+  height: 100%;
   border: 0;
   outline: 0;
   resize: none;
   color: var(--ink);
-  font-family: var(--font-pixel);
-  font-size: calc(var(--px) * 20);
-  line-height: calc(var(--px) * 46);
-  letter-spacing: 0.04em;
   background-color: transparent;
   background-image: linear-gradient(
     to bottom,
-    transparent calc(var(--px) * 44.5),
-    var(--ink) calc(var(--px) * 44.5)
+    transparent calc(var(--px) * 44),
+    var(--ink) calc(var(--px) * 44)
   );
-  background-size: 100% calc(var(--px) * 46);
+  background-size: 100% calc(var(--px) * 45);
   background-attachment: local;
   user-select: text;
 }
-.words::placeholder { color: var(--ink); opacity: 0.4; }
 /* 入力中のピンク枠 (button/textarea:focus-visible) はテキストエリアでは出さない */
 .words:focus-visible { outline: 0; }
-/* 感覚でつくる: CONFIRM (英語表記なので欧文書体)。結果の表示は 釉薬から選ぶ と同じ .glaze-combo */
-.mood-confirm { font-family: var(--font-latin); letter-spacing: 0.12em; }
-.mood-confirm:disabled { opacity: 0.35; color: inherit; }
-.sub-hint.is-warn { color: var(--pink); opacity: 1; white-space: normal; }
+/* 未入力のときの案内。1 行目は基本文字色、2 行目 (例文) はサンプルテキストの色 */
+.words-placeholder {
+  pointer-events: none;
+  white-space: nowrap;
+}
+.words-placeholder span { display: block; }
+.words-placeholder .is-example { color: var(--sub); }
+.words-status {
+  position: absolute;
+  left: calc(var(--px) * 31);
+  right: calc(var(--px) * 31);
+  top: calc(var(--px) * 446);
+}
 
 /* ---------- 中央パネル ---------- */
 .panel {
   position: absolute;
-  left: calc(var(--px) * 544.3);
-  top: calc(var(--px) * 123.9);
-  width: calc(var(--u) * 9);
-  height: calc(var(--u) * 9);
+  left: var(--panel-x);
+  top: var(--panel-y);
+  width: var(--panel-size);
+  height: var(--panel-size);
   z-index: 1;
-}
-.finegrid {
-  outline: 1px solid rgba(255, 255, 255, 0.75);
-  background-image:
-    linear-gradient(to right, var(--line) 0, var(--line) 1px, transparent 1px),
-    linear-gradient(to bottom, var(--line) 0, var(--line) 1px, transparent 1px);
-  background-size: calc(var(--u) / 5) calc(var(--u) / 5);
 }
 
 /* 形の 9 マス */
@@ -548,42 +488,26 @@ button.h:hover,
 .shape-cell {
   position: relative;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.5);
+  background: var(--tile);
   transition: background 0.2s ease;
 }
 .shape-cell img {
-  position: relative;
-  z-index: 1;
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
-  mix-blend-mode: multiply;
-  opacity: 0.45;
+  object-fit: contain;
   transition: opacity 0.2s ease;
 }
-/* 細かいグリッドは絵の後ろに敷く */
-.shape-cell::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  background-image:
-    linear-gradient(to right, var(--line) 0, var(--line) 1px, transparent 1px),
-    linear-gradient(to bottom, var(--line) 0, var(--line) 1px, transparent 1px);
-  background-size: calc(var(--u) / 5) calc(var(--u) / 5);
-  pointer-events: none;
-  transition: opacity 0.2s ease;
+.shape-cell:not(:disabled):hover { background: rgba(246, 243, 248, 0.86); }
+.shape-cell.selected {
+  background: rgba(246, 243, 248, 0.86);
+  outline: calc(var(--px) * 2) solid var(--pink);
+  outline-offset: calc(var(--px) * -2);
 }
-/* 既定は薄く、ホバーで 100%、選択中はうっすらピンクが乗る */
-.shape-cell:not(:disabled):hover { background: rgba(255, 255, 255, 0.78); }
-.shape-cell:not(:disabled):hover img { opacity: 1; }
-.shape-cell.selected { background: rgba(252, 63, 154, 0.14); }
-.shape-cell.selected img { opacity: 1; }
-.shape-cell.selected::after { opacity: 0; }
-.shape-cell:disabled img { opacity: 0.2; }
+.shape-cell:disabled img { opacity: 0.25; }
 
-/* 一筆描き */
+/* 一筆書き: 9 マスと同じ位置のパネルに描く */
+.sketch-panel { background: var(--tile); }
 .sketcher {
   position: absolute;
   inset: 0;
@@ -598,18 +522,53 @@ button.h:hover,
   position: absolute;
   left: 0;
   right: 0;
-  top: calc(var(--px) * 14);
+  top: calc(var(--px) * 36);
   text-align: center;
-  font-size: calc(var(--px) * 21);
-  letter-spacing: 0.08em;
+  font-size: calc(var(--px) * 15);
+  line-height: calc(var(--px) * 22);
+  letter-spacing: 0.1em;
   pointer-events: none;
 }
 .sketch-hint.is-warn { color: var(--pink); }
+.sketch-panel .close-x {
+  position: absolute;
+  right: calc(var(--px) * 30);
+  top: calc(var(--px) * 31);
+  z-index: 2;
+}
+.panel-foot {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--px) * 29);
+  display: flex;
+  justify-content: center;
+  gap: calc(var(--px) * 8);
+}
+
+/* 右上の X (閉じる)。細い線 2 本 */
+.close-x {
+  display: block;
+  width: calc(var(--px) * 28);
+  height: calc(var(--px) * 28);
+}
+.close-x svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.close-x:hover { color: var(--pink); }
 
 /* 器の 3D プレビュー */
 .viewer {
   transition: filter 1.2s ease, transform 1.2s ease, opacity 0.8s ease;
 }
+/* Step 2 では白細ケイ線の枠を付ける */
+.viewer.is-framed { outline: 1px solid var(--line); }
 .viewer.is-hidden { opacity: 0; }
 .vessel-canvas {
   width: 100%;
@@ -631,40 +590,70 @@ button.h:hover,
 /* 途中の絵から焼き上がりの絵へは、同じ位置でそのまま差し替える (ぼかしやフェードを挟まない) */
 .viewer.is-swap { transition: none; }
 
+/* Inspiration: 近い釉薬の候補。器のビューの右に、候補の色を載せた器を縦に 4 つ並べる */
+.cands {
+  position: absolute;
+  left: calc(var(--panel-x) + var(--panel-size));
+  top: var(--panel-y);
+  width: calc(var(--panel-size) / 4);
+  height: var(--panel-size);
+  display: grid;
+  grid-template-rows: repeat(4, 1fr);
+  z-index: 1;
+}
+.cand {
+  position: relative;
+  display: block;
+  width: 100%;
+  min-height: 0;
+  outline: 1px solid var(--line);
+  transition: background 0.2s ease;
+}
+.cand:hover { background: rgba(234, 234, 234, 0.25); }
+.cand.active {
+  outline: calc(var(--px) * 2) solid var(--pink);
+  outline-offset: calc(var(--px) * -2);
+  z-index: 1;
+}
+/* 器の描画はクリックを受けない (マス全体がボタン) */
+.cand .vessel-canvas { pointer-events: none; }
+
 /* ---------- 焼成 ---------- */
-.stage.is-firing { color: rgba(255, 255, 255, 0.82); }
+.stage.is-firing { color: rgba(255, 255, 255, 0.92); }
 .firing-label {
   position: absolute;
   left: 0;
   right: 0;
-  top: calc(var(--px) * 518);
+  top: calc(var(--px) * 446);
   text-align: center;
   z-index: 3;
   pointer-events: none;
 }
 .firing-title {
   font-family: var(--font-latin);
-  font-size: calc(var(--px) * 28);
-  line-height: calc(var(--px) * 34);
-  letter-spacing: 0.16em;
-  color: #ff5cab;
-  animation: firingBlink 1.6s steps(2, jump-none) infinite;
+  font-weight: 400;
+  font-size: calc(var(--px) * 24);
+  line-height: calc(var(--px) * 36);
+  letter-spacing: 0.04em;
+  color: #fff;
+  animation: firingBlink 1.6s ease-in-out infinite alternate;
 }
 .firing-temp {
   font-family: var(--font-latin);
-  margin-top: calc(var(--px) * 6);
-  font-size: calc(var(--px) * 44);
-  line-height: calc(var(--px) * 52);
-  letter-spacing: 0.08em;
+  font-weight: 400;
+  margin-top: calc(var(--px) * 12);
+  font-size: calc(var(--px) * 42);
+  line-height: calc(var(--px) * 58);
+  letter-spacing: 0.03em;
   font-variant-numeric: tabular-nums;
-  color: #fff;
+  color: #ec86b0;
 }
 .firing-preview {
   position: absolute;
-  left: calc(var(--px) * 544.3);
-  top: calc(var(--px) * 123.9);
-  width: calc(var(--u) * 9);
-  height: calc(var(--u) * 9);
+  left: var(--panel-x);
+  top: var(--panel-y);
+  width: var(--panel-size);
+  height: var(--panel-size);
   z-index: 2;
   pointer-events: none;
 }
@@ -680,31 +669,23 @@ button.h:hover,
   from { opacity: 0; }
   to { opacity: 1; }
 }
-/* 進捗: 工程ごとのコマ。終わったコマは白、今のコマは点滅、先のコマは薄い */
+/* 進捗: 工程ごとのコマ。終わったコマは白、今のコマは明滅、先のコマは薄い */
 .firing-steps {
   display: flex;
-  gap: calc(var(--px) * 4);
-  width: calc(var(--px) * 300);
-  margin: calc(var(--px) * 20) auto 0;
+  justify-content: center;
+  gap: calc(var(--px) * 10);
+  margin: calc(var(--px) * 32) auto 0;
 }
 .firing-step {
-  flex: 1;
-  height: calc(var(--px) * 8);
-  background: rgba(255, 255, 255, 0.22);
+  width: calc(var(--px) * 50);
+  height: calc(var(--px) * 3);
+  background: rgba(255, 255, 255, 0.28);
 }
 .firing-step.is-done { background: #fff; }
-/* 進捗の下に出す、今の段階の説明 (順番待ち・焼成中 など) */
-.firing-phase {
-  margin-top: calc(var(--px) * 12);
-  font-family: var(--font-text);
-  font-size: calc(var(--px) * 13);
-  line-height: calc(var(--px) * 20);
-  opacity: 0.75;
-}
-.firing-step.is-now { animation: stepBlink 1.2s steps(2, jump-none) infinite; }
+.firing-step.is-now { animation: stepBlink 1.2s ease-in-out infinite alternate; }
 @keyframes stepBlink {
-  from { background: rgba(255, 255, 255, 0.22); }
-  to { background: rgba(255, 255, 255, 0.8); }
+  from { background: rgba(255, 255, 255, 0.28); }
+  to { background: rgba(255, 255, 255, 0.9); }
 }
 @keyframes firingBlink {
   from { opacity: 1; }
@@ -715,82 +696,68 @@ button.h:hover,
 .recipe {
   position: absolute;
   left: var(--col-x);
-  top: calc(var(--grid-y) + var(--u) * 2 + var(--inset));
-  width: calc(var(--px) * 333);
-  height: calc(var(--px) * 646);
+  top: calc(var(--px) * 306);
+  width: var(--col-w);
+  height: calc(var(--px) * 542);
   display: flex;
   flex-direction: column;
-  padding: calc(var(--px) * 10) calc(var(--px) * 4) calc(var(--px) * 8);
-  border-top: 1px solid var(--ink);
-  border-bottom: 1px solid var(--ink);
+  padding: calc(var(--px) * 24) calc(var(--px) * 24) calc(var(--px) * 14);
+  background: var(--panel-shade);
+  font-family: var(--font-jp);
   z-index: 2;
-}
-.recipe-title {
-  font-size: calc(var(--px) * 21);
-  line-height: calc(var(--px) * 28);
-  letter-spacing: 0.08em;
+  user-select: text;
 }
 .recipe-notice {
-  margin-top: calc(var(--px) * 12);
-  font-family: var(--font-text);
-  font-size: calc(var(--px) * 12.5);
+  margin-bottom: calc(var(--px) * 10);
+  font-size: calc(var(--px) * 11);
   line-height: 1.6;
   color: var(--pink);
 }
-.recipe-notice-message {
-  color: var(--ink);
-  word-break: break-all;
-  white-space: pre-wrap;
-  max-height: calc(var(--px) * 60);
-  overflow: hidden;
-}
-.recipe-notice .link {
-  margin-top: calc(var(--px) * 4);
-  font-family: var(--font-pixel);
-  font-size: calc(var(--px) * 18);
-  letter-spacing: 0.1em;
-  color: var(--ink);
-}
-.recipe-notice .link:hover { color: var(--pink); }
 .recipe-body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   scrollbar-width: thin;
-  scrollbar-color: rgba(56, 32, 75, 0.35) transparent;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  align-content: start;
-  column-gap: calc(var(--px) * 22);
-  row-gap: calc(var(--px) * 14);
-  padding: calc(var(--px) * 18) calc(var(--px) * 22) 0;
-  font-family: var(--font-text);
-  font-size: calc(var(--px) * 14.5);
-  line-height: calc(var(--px) * 24);
+  scrollbar-color: rgba(57, 34, 76, 0.35) transparent;
+  font-size: calc(var(--px) * 12);
+  line-height: calc(var(--px) * 20);
+  letter-spacing: 0.02em;
 }
-.recipe-block-wide { grid-column: 1 / -1; }
-.recipe-block .rb-ttl { margin-bottom: calc(var(--px) * 4); }
+.recipe-block { margin-bottom: calc(var(--px) * 16); }
+.recipe-block .rb-ttl {
+  margin-bottom: calc(var(--px) * 8);
+  font-size: calc(var(--px) * 13);
+  font-weight: 700;
+  line-height: calc(var(--px) * 20);
+  letter-spacing: 0.04em;
+}
+.recipe-block > :not(.rb-ttl) { margin-left: calc(var(--px) * 14); }
 .recipe-row {
   display: flex;
-  gap: calc(var(--px) * 14);
+  gap: calc(var(--px) * 12);
 }
-.recipe-row .key { min-width: calc(var(--px) * 62); }
-.recipe-block-wide .recipe-row .key { min-width: calc(var(--px) * 74); }
-.recipe-row .val { font-variant-numeric: tabular-nums; }
+.recipe-row .key { flex: none; width: calc(var(--px) * 88); }
+.recipe-row .val { min-width: 0; font-variant-numeric: tabular-nums; }
 .recipe-text {
   white-space: pre-wrap;
   word-break: break-all;
-  line-height: calc(var(--px) * 22);
 }
+/* ゼーゲル式: 3 列。成分名と値を並べる */
 .recipe-cols {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  column-gap: calc(var(--px) * 22);
+  grid-template-columns: repeat(3, 1fr);
 }
+.recipe-cols .recipe-row { gap: 0; }
+.recipe-cols .recipe-row .key { width: calc(var(--px) * 45); }
+/* 選択した条件の入力した言葉 (長い文は折り返す) */
+.recipe-words { white-space: pre-wrap; word-break: break-word; }
 .recipe-note {
-  font-size: calc(var(--px) * 13);
-  line-height: calc(var(--px) * 18);
-  letter-spacing: 0.06em;
+  flex: none;
+  margin-top: calc(var(--px) * 8);
+  font-size: calc(var(--px) * 7.2);
+  line-height: calc(var(--px) * 14);
+  color: var(--sub);
+  text-align: center;
 }
 
 /* 回転方向の切替 */
@@ -823,38 +790,47 @@ button.h:hover,
   width: 100%;
   height: 100%;
   z-index: 5;
-}
-.title-vessel {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: calc(var(--px) * 1000);
-  height: calc(var(--px) * 1000);
-  transform: translate(-50%, -50%);
-  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-latin);
+  font-weight: 500;
+  font-size: calc(var(--px) * 56);
+  letter-spacing: 0.05em;
+  white-space: nowrap;
 }
 
 /* ---------- ABOUT ---------- */
 .about {
   position: absolute;
-  left: calc(var(--grid-x) + var(--u) * 5);
-  top: calc(var(--grid-y) + var(--u) * 2 + var(--inset));
-  width: calc(var(--px) * 850);
+  left: var(--panel-x);
+  top: calc(var(--px) * 194);
+  width: var(--panel-size);
+  color: var(--sub);
   user-select: text;
 }
 .about h1 {
-  margin: 0 0 calc(var(--px) * 54);
-  font-size: calc(var(--px) * 37);
+  display: inline-block;
+  margin: 0 0 calc(var(--px) * 48);
+  padding-bottom: calc(var(--px) * 3);
+  border-bottom: 1px solid var(--sub);
+  font-size: calc(var(--px) * 23);
   font-weight: 500;
-  line-height: calc(var(--px) * 49);
-  letter-spacing: 0.1em;
+  line-height: calc(var(--px) * 36);
+  letter-spacing: 0.08em;
 }
 .about h1 span { display: block; }
 .about p {
-  margin: 0 0 calc(var(--px) * 30);
-  font-size: calc(var(--px) * 21);
-  line-height: calc(var(--px) * 30);
+  margin: 0 0 calc(var(--px) * 36);
+  font-size: calc(var(--px) * 16.7);
+  line-height: calc(var(--px) * 36);
   letter-spacing: 0.08em;
+  text-align: justify;
+}
+:root:lang(en) .about p {
+  font-size: calc(var(--px) * 19);
+  line-height: calc(var(--px) * 32);
+  letter-spacing: 0.02em;
 }
 
 /* ---------- 撮影角度デバッガー (?debug=capture、開発用) ---------- */
@@ -959,7 +935,7 @@ button.h:hover,
 }
 .capdbg-actions button:hover { background: rgba(255, 255, 255, 0.16); }
 
-/* ---------- 釉薬を選ぶモーダル (Step 2) ---------- */
+/* ---------- モーダル共通 ---------- */
 .modal-backdrop {
   position: absolute;
   inset: 0;
@@ -967,200 +943,181 @@ button.h:hover,
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(56, 32, 75, 0.28);
+  background: rgba(57, 34, 76, 0.28);
+}
+
+/* ---------- 釉薬を選ぶモーダル (Step 2 > Glaze) ---------- */
+/* 後ろの画面には #e5c6f7 を乗算で敷く。乗算は同じ重なりの中でしか効かないので、モーダルとは別の要素にする */
+.glaze-shade {
+  position: fixed;
+  inset: 0;
+  z-index: 19;
+  background: var(--glaze-shade);
+  mix-blend-mode: multiply;
 }
 .glaze-modal {
+  position: absolute;
+  left: calc(var(--px) * 360);
+  top: calc(var(--px) * 134);
+  width: calc(var(--px) * 1200);
+  height: calc(var(--px) * 810);
+  z-index: 20;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
-  width: calc(var(--px) * 1360);
-  height: calc(var(--px) * 820);
-  padding: calc(var(--px) * 36) calc(var(--px) * 48) calc(var(--px) * 30);
-  background: rgba(255, 255, 255, 0.97);
-  outline: 1px solid rgba(255, 255, 255, 0.9);
-  box-shadow: 0 calc(var(--px) * 12) calc(var(--px) * 48) rgba(56, 32, 75, 0.25);
+  padding: calc(var(--px) * 22) calc(var(--px) * 30) calc(var(--px) * 29);
+  background: var(--glaze-bg);
 }
 .glaze-modal-head {
   display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  margin-bottom: calc(var(--px) * 22);
+  align-items: center;
+  gap: calc(var(--px) * 40);
+  height: calc(var(--px) * 40);
+  margin-bottom: calc(var(--px) * 64);
+}
+.glaze-modal-title {
+  flex: none;
+  font-family: var(--font-latin);
+  font-weight: 400;
   font-size: calc(var(--px) * 28);
-  font-weight: 500;
-  line-height: calc(var(--px) * 30);
-  letter-spacing: 0.12em;
+  line-height: calc(var(--px) * 40);
+  letter-spacing: 0.03em;
+  white-space: nowrap;
 }
-/* 右上の X (閉じる) */
-.close-x {
-  display: block;
-  align-self: center;
-  width: calc(var(--px) * 22);
-  height: calc(var(--px) * 22);
+.glaze-modal-hint {
+  flex: 1;
+  min-width: 0;
+  font-size: calc(var(--px) * 16);
+  line-height: calc(var(--px) * 24);
+  letter-spacing: 0.08em;
 }
-.close-x svg {
-  display: block;
-  width: 100%;
-  height: 100%;
-  fill: currentColor;
-  shape-rendering: crispEdges;
-}
-.close-x:hover { color: var(--pink); }
 .glaze-modal-body {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  column-gap: calc(var(--px) * 56);
+  grid-template-columns: calc(var(--px) * 600) calc(var(--px) * 400);
+  justify-content: space-between;
   min-height: 0;
+  padding: 0 calc(var(--px) * 40) 0 calc(var(--px) * 31);
 }
 .glaze-picks,
 .glaze-cands {
   min-height: 0;
   overflow-y: auto;
-  padding-right: calc(var(--px) * 12);
   scrollbar-width: thin;
-  scrollbar-color: rgba(56, 32, 75, 0.35) transparent;
+  scrollbar-color: rgba(57, 34, 76, 0.35) transparent;
 }
-.glaze-picks .sub-hint,
-.glaze-cands .sub-hint { margin-bottom: calc(var(--px) * 12); }
-/* 釉薬のカテゴリ (基礎釉・白系…)。開閉せず全部開いている */
-.glaze-cat { margin-bottom: calc(var(--px) * 18); }
+.glaze-cands { padding-right: calc(var(--px) * 10); }
+.glaze-cands .sub-hint { margin-bottom: calc(var(--px) * 8); }
+/* 釉薬のカテゴリ (基礎釉・白系…)。カテゴリ名を左に、釉薬のチップを右に並べる */
+.glaze-cat {
+  display: grid;
+  grid-template-columns: calc(var(--px) * 54) minmax(0, 1fr);
+  margin-bottom: calc(var(--px) * 16);
+}
 .glaze-cat-h {
-  font-size: calc(var(--px) * 21);
-  line-height: calc(var(--px) * 30);
-  letter-spacing: 0.08em;
+  font-size: calc(var(--px) * 10.5);
+  line-height: calc(var(--px) * 21);
+  letter-spacing: 0.04em;
   white-space: nowrap;
 }
-.glaze-cat .items.is-inline { margin-top: calc(var(--px) * 2); }
-.glaze-cat .items.is-inline .item {
-  font-size: calc(var(--px) * 17);
-  line-height: calc(var(--px) * 24);
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(var(--px) * 7) calc(var(--px) * 8);
 }
-.glaze-cands-title {
-  margin-bottom: calc(var(--px) * 6);
-  font-size: calc(var(--px) * 21);
-  line-height: calc(var(--px) * 30);
-  letter-spacing: 0.06em;
+.chip {
+  min-width: calc(var(--px) * 64);
+  height: calc(var(--px) * 21);
+  padding: 0 calc(var(--px) * 14);
+  text-align: center;
+  border-radius: calc(var(--px) * 11);
+  background: var(--btn);
+  font-size: calc(var(--px) * 10.5);
+  line-height: calc(var(--px) * 21);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  transition: background 0.15s ease, color 0.15s ease;
 }
+.chip:not(:disabled):hover { color: var(--pink); }
+.chip.active,
+.chip.active:not(:disabled):hover { background: var(--pink); color: #fff; }
+/* 現在の選択との組み合わせがデータに無い釉薬 */
+.chip:disabled { color: var(--grey); }
 .glaze-cand-list { display: flex; flex-direction: column; }
 .glaze-cand {
   display: flex;
   align-items: center;
-  gap: calc(var(--px) * 14);
+  gap: calc(var(--px) * 22);
   width: 100%;
-  padding: calc(var(--px) * 6) 0;
-  font-size: calc(var(--px) * 19);
-  line-height: calc(var(--px) * 26);
-  letter-spacing: 0.04em;
+  height: calc(var(--px) * 32);
+  font-size: calc(var(--px) * 15);
+  line-height: calc(var(--px) * 20);
+  letter-spacing: 0.06em;
 }
 .glaze-cand:hover,
 .glaze-cand.active { color: var(--pink); }
-.glaze-cand.active .glaze-cand-names { text-decoration: underline; text-underline-offset: 0.2em; }
 .glaze-cand-swatch {
   flex: none;
-  width: calc(var(--px) * 44);
-  height: calc(var(--px) * 22);
-  outline: 1px solid rgba(56, 32, 75, 0.25);
+  width: calc(var(--px) * 30);
+  height: calc(var(--px) * 19);
 }
 .glaze-cand-swatch.is-none {
   background: repeating-linear-gradient(
     -45deg,
-    rgba(56, 32, 75, 0.12) 0,
-    rgba(56, 32, 75, 0.12) 2px,
+    rgba(57, 34, 76, 0.14) 0,
+    rgba(57, 34, 76, 0.14) 2px,
     transparent 2px,
     transparent 6px
   );
 }
-.glaze-cand-names { flex: 1; min-width: 0; }
-.glaze-cand-names .is-pick { font-weight: 600; }
+.glaze-cand-names {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .glaze-cand-count {
   flex: none;
-  font-size: calc(var(--px) * 15);
-  letter-spacing: 0.06em;
-  opacity: 0.6;
+  font-size: calc(var(--px) * 12);
+  letter-spacing: 0.04em;
+  color: var(--sub);
   font-variant-numeric: tabular-nums;
 }
+.glaze-cand:hover .glaze-cand-count,
+.glaze-cand.active .glaze-cand-count { color: var(--pink); }
 .glaze-modal-foot {
   display: flex;
-  justify-content: space-between;
-  margin-top: calc(var(--px) * 22);
-  font-size: calc(var(--px) * 24);
-  font-weight: 500;
-  letter-spacing: 0.12em;
+  justify-content: center;
+  gap: calc(var(--px) * 8);
+  margin-top: calc(var(--px) * 30);
 }
-
-/* 左カラム: 確定した釉薬の組み合わせ */
-.glaze-combo {
-  margin-top: calc(var(--px) * 10);
-  font-size: calc(var(--px) * 19);
-  line-height: calc(var(--px) * 27);
-  letter-spacing: 0.04em;
-}
-.glaze-combo.is-none { opacity: 0.5; }
-.glaze-combo-swatch {
-  display: inline-block;
-  width: calc(var(--px) * 30);
-  height: calc(var(--px) * 14);
-  margin-right: calc(var(--px) * 10);
-  vertical-align: middle;
-  outline: 1px solid rgba(56, 32, 75, 0.25);
-}
-.glaze-change {
-  margin-top: calc(var(--px) * 10);
-  font-size: calc(var(--px) * 19);
-  line-height: calc(var(--px) * 27);
-  letter-spacing: 0.08em;
-}
-.glaze-change:hover { color: var(--pink); }
-/* 感覚でつくる: 近い釉薬の候補 (行の見た目は釉薬モーダルの候補 .glaze-cand と同じ) */
-.mood-cands { margin-top: calc(var(--px) * 10); }
-/* 結果画面「選択した条件」の入力した言葉 (長い文は折り返す) */
-.recipe-words { white-space: pre-wrap; word-break: break-word; }
 
 /* ---------- 焼成失敗のモーダル (Step 3) ---------- */
 .error-modal {
   width: calc(var(--px) * 560);
-  padding: calc(var(--px) * 36) calc(var(--px) * 48) calc(var(--px) * 30);
-  background: rgba(255, 255, 255, 0.97);
-  outline: 1px solid rgba(255, 255, 255, 0.9);
-  box-shadow: 0 calc(var(--px) * 12) calc(var(--px) * 48) rgba(56, 32, 75, 0.25);
+  padding: calc(var(--px) * 36) calc(var(--px) * 40) calc(var(--px) * 30);
+  background: var(--glaze-bg);
 }
 .error-modal-title {
-  font-size: calc(var(--px) * 24);
-  font-weight: 500;
-  line-height: calc(var(--px) * 32);
-  letter-spacing: 0.08em;
+  font-size: calc(var(--px) * 20);
+  font-weight: 700;
+  line-height: calc(var(--px) * 30);
+  letter-spacing: 0.06em;
   color: var(--pink);
 }
 .error-modal-message {
   margin-top: calc(var(--px) * 14);
   max-height: calc(var(--px) * 160);
   overflow-y: auto;
-  font-family: var(--font-text);
   font-size: calc(var(--px) * 13);
   line-height: 1.6;
+  color: var(--sub);
   white-space: pre-wrap;
   word-break: break-all;
 }
 .error-modal-foot {
   display: flex;
-  justify-content: space-between;
+  justify-content: center;
+  gap: calc(var(--px) * 8);
   margin-top: calc(var(--px) * 26);
-  font-size: calc(var(--px) * 22);
-  font-weight: 500;
-  letter-spacing: 0.12em;
 }
-
-/* ---------- 一筆描きモーダル (Step 1) ---------- */
-.sketch-modal {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  width: calc(var(--u) * 9 + var(--px) * 96);
-  padding: calc(var(--px) * 36) calc(var(--px) * 48) calc(var(--px) * 48);
-  background: rgba(255, 255, 255, 0.97);
-  outline: 1px solid rgba(255, 255, 255, 0.9);
-  box-shadow: 0 calc(var(--px) * 12) calc(var(--px) * 48) rgba(56, 32, 75, 0.25);
-}
-.sketch-modal-body {
-  position: relative;
-  width: calc(var(--u) * 9);
-  height: calc(var(--u) * 9);
-  max-height: calc(var(--px) * 880);
-}
+.error-modal-foot .btn { width: auto; min-width: calc(var(--px) * 186.5); padding: 0 calc(var(--px) * 20); font-family: var(--font-text); font-size: calc(var(--px) * 15); }

@@ -51,8 +51,12 @@ const DEFAULT_TEMP = 1230;
 
 // 素地・焼成雰囲気は選ばない (2026-11-12)。釉薬の索引は条件で絞り込まずに引く
 const NO_CONDITIONS: GlazeConditions = {};
-// 感覚でつくる: 自由探索で受け取る候補の数
-const MOOD_CANDIDATES = 5;
+// 感覚でつくる: 自由探索で受け取る候補の数 (器のビューの右に縦に並べる)
+const MOOD_CANDIDATES = 4;
+// 感覚でつくる: 入力が止まってから自由探索を投げるまでの待ち時間
+const MOOD_DEBOUNCE_MS = 1000;
+// 感覚でつくる: 候補サムネイルの器の大きさ
+const CAND_ZOOM = 0.72;
 
 type CellKey =
   "vase" | "haniwa" | "plate" | "handbag" | "teapot" | "flower" | "mug" | "cat" | "surprise";
@@ -76,46 +80,15 @@ const FORM_CELLS: { key: CellKey; shape?: ShapeKey | ModelShapeKey }[] = [
   { key: "surprise" },
 ];
 
-// 素地は選ばないので、かたちのサムネイルは白土で固定する
-const SHAPE_THUMB_DIR = "white"; // public/shapes/<dir>/<cell>.jpg
+// かたちのサムネイル。ローポリの器を素焼きの色で描き、結晶化フィルターをかけた透過 PNG
+const shapeThumb = (key: CellKey) => `/shapes/lowpoly/${key}.png`;
 
 type Mode = "visual" | "style" | "mood";
 const MODES: Mode[] = ["visual", "style", "mood"];
 type View = "title" | "main";
 
-// ロゴはデザインのピクセル字形をそのままトレースしたもの（フォントに依存させない）
-const LOGO_ROWS = [
-  ".###..#....##...###..###",
-  "#.....#...#..#...#.....#",
-  "#.....#...#..#...#....#.",
-  "#.##..#...####...#....#.",
-  "#..#..#...#..#...#...#..",
-  ".###..###.#..#..###..###",
-];
-const LOGO_PATH = LOGO_ROWS.flatMap((row, y) =>
-  [...row].map((ch, x) => (ch === "#" ? `M${x} ${y}h1v1h-1z` : ""))
-).join("");
-
-function Logo() {
-  return (
-    <svg
-      className="logo-mark"
-      viewBox={`0 0 ${LOGO_ROWS[0].length} ${LOGO_ROWS.length}`}
-      role="img"
-      aria-label="GLAIZ"
-    >
-      <path d={LOGO_PATH} />
-    </svg>
-  );
-}
-
-function Arrow({ dir }: { dir: "left" | "right" }) {
-  return (
-    <svg className={`arrow is-${dir}`} viewBox="0 0 10 10" aria-hidden="true">
-      <path d="M0 4h6v2H0zM4 0h2v2H4zM6 2h2v2H6zM8 4h2v2H8zM6 6h2v2H6zM4 8h2v2H4z" />
-    </svg>
-  );
-}
+// ロゴは文字 (Bodoni URW Medium)
+const LOGO_TEXT = "Glazescape Project";
 
 function RotateIcon({ dir }: { dir: "left" | "right" }) {
   return (
@@ -123,44 +96,6 @@ function RotateIcon({ dir }: { dir: "left" | "right" }) {
       <path d="M33 9C21 5 4 8 4 16c0 7 17 10 32 6" />
       <path d="M25 3l9 6-10 4" />
     </svg>
-  );
-}
-
-/** 一筆描きのモーダル。Esc と背景クリックで閉じる */
-function SketchModal({
-  title,
-  closeLabel,
-  onClose,
-  children,
-}: {
-  title: string;
-  closeLabel: string;
-  onClose: () => void;
-  children: React.ReactNode;
-}) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-  return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div
-        className="sketch-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="glaze-modal-head">
-          <span>{title}</span>
-          <CloseButton label={closeLabel} onClick={onClose} />
-        </div>
-        <div className="sketch-modal-body finegrid">{children}</div>
-      </div>
-    </div>
   );
 }
 
@@ -208,7 +143,7 @@ export default function Home() {
   >(null);
   // 「もう一度確認する」を押すたびに進めて、確認をやり直す
   const [glazeCheckKey, setGlazeCheckKey] = useState(0);
-  // 感覚でつくる: 文を書いて CONFIRM を押すと自由探索 (text_search) に投げ、
+  // 感覚でつくる: 文を書くと、入力が止まってから自動で自由探索 (text_search) に投げ、
   // 返ってきた実在レシピの候補 (moodResult) が揃ってはじめて焼成に進める。文を変えたら確定は無効になる。
   // 候補は近い順に並び、最初は 1 件目が選ばれている (moodIndex)
   const [mood, setMood] = useState("");
@@ -217,6 +152,8 @@ export default function Home() {
   const [moodStatus, setMoodStatus] = useState<"idle" | "loading" | "error" | "unavailable">("idle");
   const [moodError, setMoodError] = useState<string | null>(null);
   const moodAbort = useRef<AbortController | null>(null);
+  // かな漢字変換の途中 (未確定の文) では探索を投げない
+  const [moodComposing, setMoodComposing] = useState(false);
 
   // 焼成: FIRE を押すたびに fireKey を進めて Step 3 で生成を走らせる
   const [fireKey, setFireKey] = useState(0);
@@ -293,6 +230,16 @@ export default function Home() {
     return () => controller.abort();
   }, [mode, glazeIndex, glazeCombo, glazeCheckKey]);
 
+  // 一筆書きのパネルは Esc でも閉じる
+  useEffect(() => {
+    if (!sketchOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSketchOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [sketchOpen]);
+
   const pickCell = (cell: (typeof FORM_CELLS)[number]) => {
     if (cell.key === "surprise") {
       setSketchOpen(true);
@@ -339,9 +286,7 @@ export default function Home() {
     }
   };
 
-  const confirmMood = async () => {
-    const text = mood.trim();
-    if (!text) return;
+  const searchMood = useCallback(async (text: string) => {
     moodAbort.current?.abort();
     const controller = new AbortController();
     moodAbort.current = controller;
@@ -371,13 +316,20 @@ export default function Home() {
       setMoodError(msg ?? null);
       setMoodStatus("error");
     }
-  };
+  }, []);
+  // 入力が止まったら探索する (CONFIRM ボタンは無い)。打ち直すたびに待ち直し、前の探索は editMood が取り消す
+  useEffect(() => {
+    const text = mood.trim();
+    if (!text || moodComposing) return;
+    const timer = setTimeout(() => searchMood(text), MOOD_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [mood, moodComposing, searchMood]);
+  // 画面を離れるときは進行中の探索を取り消す
+  useEffect(() => () => moodAbort.current?.abort(), []);
   const moodPick = moodResult?.results[moodIndex] ?? moodResult?.results[0] ?? null;
 
-  // Step 2 の 3 つの選び方。開いているもの以外は下に小さく並べる
+  // Step 2 の 3 つの選び方 (タブ)。Glaze は開くと同時に釉薬を選ぶモーダルを出す
   const activeMode: Mode = mode ?? "visual";
-  const modeLabel = (m: Mode) =>
-    m === "visual" ? t.appearance : m === "style" ? t.glazeHeading : t.inspiration;
   const openMode = (m: Mode) => {
     if (m === "style") openGlazeModal();
     else setMode(m);
@@ -478,15 +430,13 @@ export default function Home() {
   return (
     <>
       <div className={`backdrop ${backdropState}`} aria-hidden="true">
-        <div className="backdrop-title" />
         <div className="backdrop-firing" />
-        <div className="backdrop-grid" />
         <div className="backdrop-grain" />
       </div>
 
       <div className={`stage ${inFlow && firingNow ? "is-firing" : ""}`}>
-        {/* 共通クローム: ロゴと右ナビ。焼成演出中は隠す */}
-        {!(inFlow && firingNow) && (
+        {/* 共通クローム: ロゴと右ナビ。タイトル (中央にロゴだけ) と焼成演出中は隠す */}
+        {view === "main" && !(inFlow && firingNow) && (
           <button
             type="button"
             className="logo"
@@ -496,7 +446,7 @@ export default function Home() {
               setStep(1);
             }}
           >
-            <Logo />
+            {LOGO_TEXT}
           </button>
         )}
 
@@ -515,7 +465,7 @@ export default function Home() {
                 className={lang === "ja" ? "active" : ""}
                 onClick={() => setLang("ja")}
               >
-                JP
+                Jp
               </button>
               <span> / </span>
               <button
@@ -523,7 +473,7 @@ export default function Home() {
                 className={lang === "en" ? "active" : ""}
                 onClick={() => setLang("en")}
               >
-                EN
+                En
               </button>
             </div>
             {/* ARCHIVE / SHARE は未実装のため非活性 */}
@@ -543,8 +493,7 @@ export default function Home() {
             aria-label={t.start}
             onClick={() => setView("main")}
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img className="title-vessel" src="/title-vessel.webp" alt="" />
+            {LOGO_TEXT}
           </button>
         )}
 
@@ -566,169 +515,148 @@ export default function Home() {
           {/* Step 1: かたちだけを選ぶ */}
           {step === 1 && (
             <>
-              <div className="col">
-                <h2 className="section-title">
-                  <span className="step-no">1.</span>
-                  {t.selectBase}
-                </h2>
-                <div className="group is-u1">
-                  <div className="sub-hint form-hint">{t.formHint}</div>
-                </div>
-              </div>
+              <h2 className="section-title">1. {t.selectForm}</h2>
 
-              {/* かたちの 9 マス。押したマスが選択中になり、NEXT で決定する */}
-              <div className="panel shape-grid">
-                {FORM_CELLS.map((cell) => {
-                  const selectable = cell.key === "surprise" || !!cell.shape;
-                  const selected = shapeChosen && selectedCell === cell.key;
-                  const cellLabel =
-                    cell.key === "surprise" && selected ? t.shapes.wheel : t.shapes[cell.key];
-                  return (
-                    <button
-                      key={cell.key}
-                      type="button"
-                      className={`shape-cell ${selected ? "selected" : ""}`}
-                      disabled={!selectable}
-                      aria-label={cellLabel}
-                      aria-pressed={selected}
-                      onClick={() => pickCell(cell)}
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={`/shapes/${SHAPE_THUMB_DIR}/${cell.key}.jpg`} alt="" />
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* 一筆描き: モーダルで描き、描き終わると閉じて custom の形になる */}
-              {sketchOpen && (
-                <SketchModal
-                  title={t.shapes.wheel}
-                  closeLabel={t.glazeClose}
-                  onClose={() => setSketchOpen(false)}
-                >
+              {sketchOpen ? (
+                // 一筆書き: 9 マスと同じ位置のパネルに描き、OK で custom の形になる
+                <div className="panel sketch-panel" role="dialog" aria-label={t.shapes.wheel}>
+                  <CloseButton label={t.glazeClose} onClick={() => setSketchOpen(false)} />
                   <ProfileSketcher
                     onShapeDrawn={pickCustomShape}
                     hint={t.drawHint}
                     tooShortText={t.drawTooShort}
+                    clearLabel={t.clear}
+                    okLabel={t.ok}
                   />
-                </SketchModal>
+                </div>
+              ) : (
+                // かたちの 9 マス。押したマスが選択中になり、Next で決定する
+                <div className="panel shape-grid">
+                  {FORM_CELLS.map((cell) => {
+                    const selectable = cell.key === "surprise" || !!cell.shape;
+                    const selected = shapeChosen && selectedCell === cell.key;
+                    const cellLabel =
+                      cell.key === "surprise" && selected ? t.shapes.wheel : t.shapes[cell.key];
+                    return (
+                      <button
+                        key={cell.key}
+                        type="button"
+                        className={`shape-cell ${selected ? "selected" : ""}`}
+                        disabled={!selectable}
+                        aria-label={cellLabel}
+                        aria-pressed={selected}
+                        onClick={() => pickCell(cell)}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={shapeThumb(cell.key)} alt="" />
+                      </button>
+                    );
+                  })}
+                </div>
               )}
 
               <div className="nav">
                 <button
                   type="button"
-                  className="link"
+                  className="btn"
                   disabled={!shapeChosen}
-                  onClick={() => setStep(2)}
+                  onClick={() => {
+                    setSketchOpen(false);
+                    setStep(2);
+                  }}
                 >
-                  {t.next} <Arrow dir="right" />
+                  {t.next}
                 </button>
               </div>
             </>
           )}
 
-          {/* Step 2: 釉薬のつくり方。見出しだけが並び、クリックした方式が開く (他はグレーアウト) */}
+          {/* Step 2: 釉薬のつくり方。Color / Glaze / Inspiration のタブで選び方を切り替える。
+              3 つは順番の項目ではなく、同じ釉薬を別の入口から決めるための切り替え */}
           {step === 2 && (
             <>
-              <div className="col is-accordion">
-                <h2 className="section-title">
-                  <span className="step-no">2.</span>
-                  {t.selectLook}
-                </h2>
+              <h2 className="section-title">2. {t.selectLook}</h2>
 
-                {/* 開いている選び方だけを大きな見出しで出し、残り 2 つは下に小さく横並びにする。
-                    3 つは順番の項目ではなく、同じ釉薬を別の入口から決めるための切り替え */}
-                <div className="group">
-                  <button type="button" className="h active" onClick={() => openMode(activeMode)}>
-                    {modeLabel(activeMode)}
-                  </button>
-                  {activeMode === "visual" && (
-                    <div className="subs">
-                      {/* 色は色相環だけで選ぶ (小見出し・HSL スライダーは無し) */}
-                      <ColorWheel selected={glaze} onSelect={setGlaze} labels={t.wheelFilters} />
-                    </div>
-                  )}
-                  {activeMode === "style" && (
-                    <div className="subs">
-                      {glazeCombo ? (
-                        <div className="glaze-combo">
-                          {styleHex && (
-                            <span className="glaze-combo-swatch" style={{ background: styleHex }} />
-                          )}
-                          {glazeComboLabel(glazeCombo, lang)}
+              <div className="lookbox">
+                <div className="tabs" role="tablist">
+                  {MODES.map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      role="tab"
+                      aria-selected={m === activeMode}
+                      className={`tab ${m === activeMode ? "active" : ""}`}
+                      onClick={() => openMode(m)}
+                    >
+                      {t.tabs[m]}
+                    </button>
+                  ))}
+                </div>
+
+                {activeMode === "visual" && (
+                  <div className="tab-panel is-center" role="tabpanel">
+                    {/* 色は色相環だけで選ぶ */}
+                    <ColorWheel selected={glaze} onSelect={setGlaze} labels={t.wheelFilters} />
+                  </div>
+                )}
+
+                {activeMode === "style" && (
+                  <div className="tab-panel is-pad" role="tabpanel">
+                    {glazeCombo ? (
+                      <div className="glaze-combo">
+                        {styleHex && (
+                          <span className="glaze-combo-swatch" style={{ background: styleHex }} />
+                        )}
+                        {glazeComboLabel(glazeCombo, lang)}
+                      </div>
+                    ) : (
+                      <div className="glaze-combo is-none">{t.glazeNone}</div>
+                    )}
+                    <button type="button" className="btn is-small" onClick={openGlazeModal}>
+                      {glazeCombo ? t.glazeChange : t.glazeOpen}
+                    </button>
+                    {glazeCheck?.status === "checking" && (
+                      <div className="sub-hint">{t.glazeChecking}</div>
+                    )}
+                    {glazeCheck?.status === "none" && (
+                      <div className="sub-hint is-warn">{t.glazeUnavailable}</div>
+                    )}
+                    {(glazeCheck?.status === "unknown" || glazeCheck?.status === "unavailable") && (
+                      <>
+                        <div className="sub-hint is-warn">
+                          {glazeCheck.status === "unavailable" ? t.serverUnavailable : t.glazeCheckFailed}
                         </div>
-                      ) : (
-                        <div className="glaze-combo is-none">{t.glazeNone}</div>
-                      )}
-                      <button type="button" className="glaze-change" onClick={openGlazeModal}>
-                        -{glazeCombo ? t.glazeChange : t.glazeOpen}
-                      </button>
-                      {glazeCheck?.status === "checking" && (
-                        <div className="sub-hint">{t.glazeChecking}</div>
-                      )}
-                      {glazeCheck?.status === "none" && (
-                        <div className="sub-hint is-warn">{t.glazeUnavailable}</div>
-                      )}
-                      {(glazeCheck?.status === "unknown" || glazeCheck?.status === "unavailable") && (
-                        <>
-                          <div className="sub-hint is-warn">
-                            {glazeCheck.status === "unavailable" ? t.serverUnavailable : t.glazeCheckFailed}
-                          </div>
-                          <button
-                            type="button"
-                            className="glaze-change"
-                            onClick={() => setGlazeCheckKey((k) => k + 1)}
-                          >
-                            -{t.glazeRecheck}
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  )}
-                  {activeMode === "mood" && (
-                    <div className="subs">
-                      <textarea
-                        className="words"
-                        placeholder={t.moodPlaceholder}
-                        value={mood}
-                        onChange={(e) => editMood(e.target.value)}
-                      />
-                      {moodResult && moodPick ? (
-                        // 近い順の候補。色見本と釉名称・焼成温度を見て選ぶ (最初は 1 件目)
-                        <div className="mood-cands" role="radiogroup" aria-label={t.moodCandidates}>
-                          <div className="sub-hint">{t.moodCandidates}</div>
-                          {moodResult.results.map((r, k) => (
-                            <button
-                              key={r.recipe_id}
-                              type="button"
-                              role="radio"
-                              aria-checked={r === moodPick}
-                              className={`glaze-cand ${r === moodPick ? "active" : ""}`}
-                              onClick={() => setMoodIndex(k)}
-                            >
-                              <span className="glaze-cand-swatch" style={{ background: r.color }} />
-                              <span className="glaze-cand-names">
-                                {r.glaze_types.length > 0
-                                  ? r.glaze_types
-                                      .map((g) => (lang === "en" ? g.en : g.ja))
-                                      .join(lang === "en" ? ", " : "、")
-                                  : "—"}
-                              </span>
-                              <span className="glaze-cand-count">{r.temp}°C</span>
-                            </button>
-                          ))}
-                        </div>
-                      ) : (
                         <button
                           type="button"
-                          className="glaze-change mood-confirm"
-                          disabled={moodStatus === "loading" || mood.trim().length === 0}
-                          onClick={confirmMood}
+                          className="btn is-small"
+                          onClick={() => setGlazeCheckKey((k) => k + 1)}
                         >
-                          -{t.moodConfirm}
+                          {t.glazeRecheck}
                         </button>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {activeMode === "mood" && (
+                  <div className="tab-panel" role="tabpanel">
+                    <div className="words-wrap">
+                      <textarea
+                        className="words"
+                        aria-label={t.moodPlaceholder}
+                        value={mood}
+                        onChange={(e) => editMood(e.target.value)}
+                        onCompositionStart={() => setMoodComposing(true)}
+                        onCompositionEnd={() => setMoodComposing(false)}
+                      />
+                      {mood.length === 0 && !moodComposing && (
+                        <div className="words-placeholder" aria-hidden="true">
+                          <span>{t.moodPlaceholder}</span>
+                          <span className="is-example">{t.moodExample}</span>
+                        </div>
                       )}
+                    </div>
+                    <div className="words-status" role="status">
                       {moodStatus === "loading" && <div className="sub-hint">{t.moodSearching}</div>}
                       {moodStatus === "unavailable" && (
                         <div className="sub-hint is-warn">{t.serverUnavailable}</div>
@@ -740,25 +668,61 @@ export default function Home() {
                         </div>
                       )}
                     </div>
-                  )}
-                </div>
-
-                <div className="mode-alts">
-                  {MODES.filter((m) => m !== activeMode).map((m) => (
-                    <button key={m} type="button" className="mode-alt" onClick={() => openMode(m)}>
-                      -{modeLabel(m)}
-                    </button>
-                  ))}
-                </div>
+                  </div>
+                )}
               </div>
 
+              {/* 感覚でつくる: 近い順の候補。候補の色を載せた器を見て選ぶ (最初は 1 件目) */}
+              {activeMode === "mood" && moodResult && moodPick && (
+                <div className="cands" role="radiogroup" aria-label={t.moodCandidates}>
+                  {moodResult.results.slice(0, MOOD_CANDIDATES).map((r, k) => {
+                    const names =
+                      r.glaze_types.length > 0
+                        ? r.glaze_types
+                            .map((g) => (lang === "en" ? g.en : g.ja))
+                            .join(lang === "en" ? ", " : "、")
+                        : "";
+                    const label = `${names} ${r.temp}°C`.trim();
+                    return (
+                      <button
+                        key={r.recipe_id}
+                        type="button"
+                        role="radio"
+                        aria-checked={r === moodPick}
+                        aria-label={label}
+                        title={label}
+                        className={`cand ${r === moodPick ? "active" : ""}`}
+                        onClick={() => setMoodIndex(k)}
+                      >
+                        <VesselCanvas
+                          shape={shape}
+                          custom={customVessel}
+                          texturePath={null}
+                          hex={r.color}
+                          gloss={DEFAULT_GLOSS}
+                          tone={GLAZE_TONE}
+                          zoom={CAND_ZOOM}
+                          lowPoly
+                          still
+                          stillYaw={captureAngle.yaw}
+                        />
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
               <div className="nav">
-                <button type="button" className="link" onClick={() => setStep(1)}>
-                  <Arrow dir="left" /> {t.back}
+                <button type="button" className="btn" onClick={() => setStep(1)}>
+                  {t.back}
                 </button>
-                <span className="sep">/</span>
-                <button type="button" className="link" disabled={!canFire || posing} onClick={startFiring}>
-                  {t.fire} <Arrow dir="right" />
+                <button
+                  type="button"
+                  className="btn is-fire"
+                  disabled={!canFire || posing}
+                  onClick={startFiring}
+                >
+                  {t.fire}
                 </button>
               </div>
             </>
@@ -794,10 +758,14 @@ export default function Home() {
             onBack={() => setStep(2)}
           />
 
-          {step === 3 && !firingFailed && (
+          {/* 焼き上がり: Save は Archive への保存 (未実装のため非活性)、Try Another は Step 2 に戻る */}
+          {showResult && (
             <div className="nav">
-              <button type="button" className="link" onClick={() => setStep(2)}>
-                <Arrow dir="left" /> {t.back}
+              <button type="button" className="btn" disabled>
+                {t.save}
+              </button>
+              <button type="button" className="btn" onClick={() => setStep(2)}>
+                {t.tryAnother}
               </button>
             </div>
           )}
@@ -841,7 +809,7 @@ export default function Home() {
 
           {showViewer && (
             <div
-              className={`panel viewer ${inKiln ? "is-firing" : firingNow ? "" : "finegrid"} ${
+              className={`panel viewer ${inKiln ? "is-firing" : step === 2 ? "is-framed" : ""} ${
                 firingFrame ? "is-hidden" : ""
               } ${firedImage && firingProgress?.preview ? "is-swap" : ""}`}
             >

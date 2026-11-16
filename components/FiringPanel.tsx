@@ -200,36 +200,22 @@ function DbRecipe({ recipe }: { recipe: RecipeV5 }) {
       : formula?.text
         ? [{ label: "原料配合", text: formula.text }]
         : [];
+  // 0 の成分も含めて全部出す (3 列)
   const seger = recipe.seger
-    ? SEGER_ORDER.filter((k) => recipe.seger![k] > 0).map((k) => ({
-        label: SEGER_LABEL[k],
-        mol: recipe.seger![k],
-      }))
+    ? SEGER_ORDER.map((k) => ({ label: SEGER_LABEL[k], mol: recipe.seger![k] ?? 0 }))
     : [];
   return (
     <>
       {recipe.glaze_types.length > 0 && (
-        <div className="recipe-block recipe-block-wide">
+        <div className="recipe-block">
           <div className="rb-ttl">釉名称</div>
           <div className="recipe-text">
             {recipe.glaze_types.map((g) => g.ja).join("、")}
           </div>
         </div>
       )}
-      {sections.length === 0 && (
-        <div className="recipe-block recipe-block-wide">
-          <div className="rb-ttl">原料配合</div>
-          <div className="recipe-text">記載なし</div>
-        </div>
-      )}
-      {sections.map((s) => (
-        <div className="recipe-block recipe-block-wide" key={s.label}>
-          <div className="rb-ttl">{s.label}</div>
-          <div className="recipe-text">{s.text}</div>
-        </div>
-      ))}
       {seger.length > 0 && (
-        <div className="recipe-block recipe-block-wide">
+        <div className="recipe-block">
           <div className="rb-ttl">ゼーゲル式</div>
           <div className="recipe-cols">
             {seger.map((row) => (
@@ -241,16 +227,21 @@ function DbRecipe({ recipe }: { recipe: RecipeV5 }) {
           </div>
         </div>
       )}
+      {/* 原材料配合: DB の見出し (基礎釉 / 添加物 / 使用粘土 など) ごとに 1 行 */}
+      <div className="recipe-block">
+        <div className="rb-ttl">原材料配合</div>
+        {sections.length === 0 && <div className="recipe-text">記載なし</div>}
+        {sections.map((s) => (
+          <div className="recipe-text" key={s.label}>
+            {s.label === "原料配合" ? s.text : `${s.label}：${s.text}`}
+          </div>
+        ))}
+      </div>
     </>
   );
 }
 
 // 結果画面の「選択した条件」。まわりのレシピ本文と同じく日本語表記で固定する
-const MODE_LABEL: Record<FiringUiState["mode"], string> = {
-  visual: STRINGS.ja.appearance,
-  style: STRINGS.ja.glazeHeading,
-  mood: STRINGS.ja.inspiration,
-};
 // v5 が条件を外したとき (recipe.relaxed) のキー → 表示名
 const RELAXED_LABEL: Record<string, string> = {
   hyomen: "表面",
@@ -277,41 +268,20 @@ function SelectedConditions({
 }) {
   const glazeNames = ui.glazeCodes.map((code) => glazeStyleByCode(code)?.ja ?? code).join("、");
   return (
-    <div className="recipe-block recipe-block-wide">
+    <div className="recipe-block">
       <div className="rb-ttl">選択した条件</div>
+      {/* かたちの横に、選んだ色 / 釉薬 / 入力した言葉を並べる */}
       <div className="recipe-row">
-        <span className="key">- かたち</span>
-        <span className="val">{shapeLabel(shape)}</span>
+        <span className="key">{shapeLabel(shape)}</span>
+        {ui.mode === "visual" && ui.glaze && (
+          <span className="val">
+            <span className="glaze-combo-swatch" style={{ background: ui.glaze.hex }} />
+            {ui.glaze.hex}
+          </span>
+        )}
+        {ui.mode === "style" && <span className="val">{glazeNames || "-"}</span>}
+        {ui.mode === "mood" && <span className="val recipe-words">{ui.mood.trim() || "-"}</span>}
       </div>
-      <div className="recipe-row">
-        <span className="key">- 選び方</span>
-        <span className="val">{MODE_LABEL[ui.mode]}</span>
-      </div>
-      {ui.mode === "visual" && (
-        <>
-          {ui.glaze && (
-            <div className="recipe-row">
-              <span className="key">- 色</span>
-              <span className="val">
-                <span className="glaze-combo-swatch" style={{ background: ui.glaze.hex }} />
-                {ui.glaze.hex}
-              </span>
-            </div>
-          )}
-        </>
-      )}
-      {ui.mode === "style" && (
-        <div className="recipe-row">
-          <span className="key">- 釉薬</span>
-          <span className="val">{glazeNames || "-"}</span>
-        </div>
-      )}
-      {ui.mode === "mood" && (
-        <div className="recipe-row">
-          <span className="key">- 言葉</span>
-          <span className="val recipe-words">{ui.mood.trim() || "-"}</span>
-        </div>
-      )}
       {relaxed.length > 0 && (
         <div className="recipe-text">
           ※ 一致するデータが無かったため、次の条件は外して選んでいます:{" "}
@@ -492,8 +462,6 @@ export default function FiringPanel({
             startedAt={progress.startedAt}
           />
           <FiringSteps progress={progress} model3d={caps.model3d} title={t.phases[phase]} />
-          {/* 今どの段階で待っているか (窯の順番待ちは数分かかることがあり、無表示だと止まって見える) */}
-          <div className="firing-phase">{t.phases[phase]}</div>
         </div>
       </>
     );
@@ -514,11 +482,11 @@ export default function FiringPanel({
             </div>
           )}
           <div className="error-modal-foot">
-            <button type="button" className="link" onClick={onBack}>
+            <button type="button" className="btn is-dark" onClick={onBack}>
               {t.back}
             </button>
             {phase === "failed" && (
-              <button type="button" className="link" onClick={() => setRetryKey((k) => k + 1)}>
+              <button type="button" className="btn is-dark" onClick={() => setRetryKey((k) => k + 1)}>
                 {canRetry3d ? t.retry3d : t.retry}
               </button>
             )}
@@ -529,43 +497,39 @@ export default function FiringPanel({
   }
 
   return (
-    <div className="recipe">
-      <div className="recipe-title">{t.suggestedRecipe}</div>
+    <>
+      <h2 className="section-title">{t.recipe}</h2>
+      <div className="recipe">
+        {colorFar && <div className="recipe-notice">{t.colorFar}</div>}
 
-      {colorFar && (
-        <div className="recipe-notice">
-          <div className="recipe-notice-message">{t.colorFar}</div>
-        </div>
-      )}
+        {/* レシピ本文はデザインに合わせて言語切替に関わらず日本語表記。中身は DB の実在レシピ。
+            並びは 選択した条件 → 釉名称 → ゼーゲル式 → 原材料配合 → 焼成条件 */}
+        <div className="recipe-body">
+          <SelectedConditions ui={ui} shape={shape} relaxed={recipe?.relaxed ?? []} />
 
-      {/* レシピ本文はデザインに合わせて言語切替に関わらず日本語表記。中身は DB の実在レシピ */}
-      <div className="recipe-body">
-        {recipe && <DbRecipe recipe={recipe} />}
+          {recipe && <DbRecipe recipe={recipe} />}
 
-        <div className="recipe-block recipe-block-wide">
-          <div className="rb-ttl">焼成条件</div>
-          <div className="recipe-row">
-            <span className="key">- 素地</span>
-            <span className="val">
-              {recipe ? SOJI_LABEL[recipe.soji] : (ui.clay ?? "-")}
-            </span>
-          </div>
-          <div className="recipe-row">
-            <span className="key">- 焼成温度</span>
-            <span className="val">{recipe ? `${recipe.temp}°C` : "-"}</span>
-          </div>
-          <div className="recipe-row">
-            <span className="key">- 焼成雰囲気</span>
-            <span className="val">
-              {recipe ? `${SHOSEI_LABEL[recipe.shosei]}焼成` : (ui.atmosphere ?? "-")}
-            </span>
+          <div className="recipe-block">
+            <div className="rb-ttl">焼成条件</div>
+            <div className="recipe-row">
+              <span className="key">素地</span>
+              <span className="val">{recipe ? SOJI_LABEL[recipe.soji] : (ui.clay ?? "-")}</span>
+            </div>
+            <div className="recipe-row">
+              <span className="key">焼成最高温度</span>
+              <span className="val">{recipe ? `${recipe.temp}°C` : "-"}</span>
+            </div>
+            <div className="recipe-row">
+              <span className="key">焼成雰囲気</span>
+              <span className="val">
+                {recipe ? SHOSEI_LABEL[recipe.shosei] : (ui.atmosphere ?? "-")}
+              </span>
+            </div>
           </div>
         </div>
 
-        <SelectedConditions ui={ui} shape={shape} relaxed={recipe?.relaxed ?? []} />
+        <div className="recipe-note">{t.disclaimer}</div>
       </div>
-
-      <div className="recipe-note">{t.disclaimer}</div>
-    </div>
+    </>
   );
 }

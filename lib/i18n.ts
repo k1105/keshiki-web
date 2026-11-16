@@ -3,20 +3,36 @@ import type { Hyomen, YuseijoA, YuseijoB } from "./generate_v5";
 
 export type Lang = "en" | "ja";
 
+// 見出し・タブ・ボタン・右ナビは言語に関わらず英語表記 (docs/1115_Glaiz_web.pdf)。
+// JP / EN で切り替わるのは説明文・About・釉薬名
+const FIXED = {
+  about: "About",
+  archive: "Archive",
+  share: "Share",
+  selectForm: "Select Form",
+  selectLook: "Select Look",
+  tabs: { visual: "Color", style: "Glaze", mood: "Inspiration" },
+  glazeModalTitle: "2. Select Look > Glaze",
+  next: "Next",
+  back: "Back",
+  fire: "Fire",
+  clear: "Clear",
+  ok: "OK",
+  save: "Save",
+  tryAnother: "Try Another",
+  recipe: "Recipe",
+  firing: "Firing...",
+  wheelFilters: { all: "All", light: "Light", medium: "Mid", dark: "Dark" },
+};
+
 const en = {
-  about: "ABOUT",
-  archive: "ARCHIVE",
-  share: "SHARE",
+  ...FIXED,
   start: "Start",
 
-  selectBase: "Select the Base",
   form: "FORM",
   formHint: "Choose the form you want to make.",
   clayBody: "CLAY BODY",
   atmosphere: "ATMOSPHERE",
-  next: "NEXT",
-  back: "BACK",
-  fire: "FIRE",
 
   shapes: {
     vase: "VASE",
@@ -38,10 +54,9 @@ const en = {
   oxidation: "Oxidation",
   reduction: "Reduction",
 
-  drawHint: "Draw a single line from base to rim.",
+  drawHint: "Draw the shape you want in a single stroke.",
   drawTooShort: "The line is too short. Draw a longer one.",
 
-  selectLook: "Select the Look",
   appearance: "APPEARANCE",
   glazeHeading: "FROM A GLAZE",
   inspiration: "INSPIRATION",
@@ -49,7 +64,6 @@ const en = {
   color: "COLOR",
   colorWheel: "Color Wheel",
   hslSliders: "HSL Sliders",
-  wheelFilters: { all: "All", light: "Light", medium: "Mid", dark: "Dark" },
   hue: "Hue",
   saturation: "Saturation",
   lightness: "Lightness",
@@ -73,12 +87,12 @@ const en = {
     YuseijoBKannyu: "Crackle",
     YuseijoBLuster: "Luster",
   } as Record<YuseijoB, string>,
-  glazeHint: "Pick any glazes you like. Greyed ones have no data together with your picks and cannot be chosen.",
+  glazeHint:
+    "Choose the glazes you want to use, then pick a combination you like from the narrowed-down list.",
   glazeSelected: "selected",
   glazeNone: "Not chosen yet",
   glazeOpen: "Choose",
   glazeChange: "Change",
-  glazeModalTitle: "GLAZE",
   glazeCandidates: "Combinations in the database",
   glazeCandidatesNear: "No combination contains all of your picks. Closest ones:",
   glazeCandidatesEmpty: "No combination contains these glazes.",
@@ -93,13 +107,12 @@ const en = {
   glazeCheckFailed: "Could not check whether this glaze can be fired.",
   glazeRecheck: "Check again",
   moodCandidates: "Closest glazes. Choose one.",
-  moodPlaceholder:
-    "Describe the glaze you have in mind. e.g. A forest after rain, quiet and a little damp.",
+  moodPlaceholder: "Describe the glaze you have in mind.",
+  moodExample: "ex) Like a forest after rain, quiet and a little damp.",
   moodConfirm: "CONFIRM",
   moodSearching: "Looking for a matching glaze...",
   moodFailed: "Could not find a glaze. Please try again.",
 
-  firing: "FIRING...",
   phases: {
     submitting: "Submitting the firing job...",
     queued: "Waiting in the kiln queue. A cold kiln takes 2-3 min.",
@@ -146,20 +159,13 @@ const en = {
 export type Strings = typeof en;
 
 const ja: Strings = {
-  about: "ABOUT",
-  archive: "ARCHIVE",
-  share: "SHARE",
+  ...FIXED,
   start: "はじめる",
 
-  selectBase: "ベースを選ぶ",
   form: "かたち",
   formHint: "生成したいかたちを選んでください",
   clayBody: "素地",
   atmosphere: "焼成雰囲気",
-  // ボタン類は日本語 UI でも英語表記
-  next: "NEXT",
-  back: "BACK",
-  fire: "FIRE",
 
   shapes: {
     vase: "壺",
@@ -171,7 +177,7 @@ const ja: Strings = {
     mug: "マグ",
     cat: "猫",
     surprise: "自分でつくる",
-    wheel: "一筆描き",
+    wheel: "一筆書き",
   },
   clays: {
     "stoneware-white": "陶器/白",
@@ -181,10 +187,9 @@ const ja: Strings = {
   oxidation: "酸化焼成",
   reduction: "還元焼成",
 
-  drawHint: "底から口へ向かって、器の輪郭を一筆で描いてください。",
+  drawHint: "作りたいかたちを一筆書きで描いてください",
   drawTooShort: "線が短すぎます。もう少し長く描いてください",
 
-  selectLook: "見た目を選ぶ",
   appearance: "外観を選ぶ",
   glazeHeading: "釉薬から選ぶ",
   inspiration: "感覚でつくる",
@@ -192,7 +197,6 @@ const ja: Strings = {
   color: "色",
   colorWheel: "色相環",
   hslSliders: "HSLスライダー",
-  wheelFilters: { all: "すべて", light: "明るめ", medium: "中間", dark: "暗め" },
   hue: "色相",
   saturation: "彩度",
   lightness: "明度",
@@ -216,16 +220,15 @@ const ja: Strings = {
     YuseijoBKannyu: "貫入",
     YuseijoBLuster: "ラスター",
   },
-  glazeHint: "薄い項目は今の選択と組み合わせたデータがなく、選べません",
+  glazeHint: "使用したい釉薬を選び、絞り込まれた組み合わせ一覧の中から気に入ったものを選んでください",
   glazeSelected: "選択中",
   glazeNone: "未選択",
   glazeOpen: "選ぶ",
   glazeChange: "選び直す",
-  glazeModalTitle: "釉薬",
   glazeCandidates: "データベースにある組み合わせ",
   glazeCandidatesNear: "選んだ釉薬をすべて含む組み合わせはありません。近いもの:",
   glazeCandidatesEmpty: "選んだ釉薬を含む組み合わせがありません",
-  glazeCount: (n: number) => `${n}件`,
+  glazeCount: (n: number) => `${n} 件`,
   glazeMore: (n: number) => `ほか${n}件。釉薬を追加で選ぶと絞り込めます`,
   glazeConfirm: "決定",
   glazeClear: "クリア",
@@ -236,13 +239,12 @@ const ja: Strings = {
   glazeCheckFailed: "焼成できるか確認できませんでした",
   glazeRecheck: "もう一度確認する",
   moodCandidates: "近い釉薬の候補 (選べます)",
-  moodPlaceholder:
-    "つくりたい釉薬のイメージを書いてください。ex. 雨上がりの森みたいな、静かで少し湿った感じ。",
+  moodPlaceholder: "つくりたい釉薬のイメージを書いてください。",
+  moodExample: "ex) 雨上がりの森みたいな、静かで少し湿った感じ。",
   moodConfirm: "CONFIRM",
   moodSearching: "近い釉薬を探しています…",
   moodFailed: "釉薬が見つかりませんでした。もう一度お試しください",
 
-  firing: "FIRING...",
   phases: {
     submitting: "焼成ジョブを投入中…",
     queued: "窯の順番待ち… 窯が冷えていると 2〜3 分かかります",
@@ -275,15 +277,13 @@ const ja: Strings = {
   rotateLeft: "左に回す",
   rotateRight: "右に回す",
 
-  // 仮訳。確定コピーが決まったら差し替える
-  aboutHeading: [
-    "釉薬の美しさを、AIで可視化する。",
-    "やきものの、もうひとつの楽しみ方。",
-  ],
+  // docs/1115_Glaiz_web.pdf p.3 のコピー
+  aboutHeading: ["陶芸の釉薬表現を AI で拡張する"],
   aboutBody: [
-    "やきものは、土と釉薬と炎が化学反応によって思いがけない美しさへと変わる、時代を超えた技術です。",
-    "Glazescape Projectは、日本の窯業界に蓄積された膨大な釉薬データと、最先端のAI技術をかけあわせる取り組みです。これまで職人の経験と勘によって形づくられてきた釉薬の世界を可視化することで、誰もが自由に新しい創造の可能性を探れる、やきもののもうひとつの楽しみ方をつくることを目指しています。",
-    "この試みが、陶磁文化の未来に新たな可能性をひらき、思いがけない新しい反応を生み出すことを願っています。",
+    "陶器の表面に広がる、複雑で豊かな色彩や景色。その美しさを生み出すのが「釉薬」です。釉薬は、さまざまな原材料の配合や焼成温度、窯の中の環境などが複雑に作用することで、無限ともいえる表情を生み出します。しかし、その焼き上がりを正確に予測することは、熟練した陶芸家にとっても容易ではありません。理想の釉薬をつくるには、膨大な試行錯誤と経験、化学的な知識が必要とされます。",
+    "一方、陶芸には、偶然が生み出す美しさがあります。窯の中のわずかな環境の変化によって、予期せぬ色彩や模様が現れる「窯変」。それは、ときに人間の想像を超えた表現を生み出します。この予測不能な創造性は、生成 AI にも通じるものがあります。同じ条件を与えても異なる結果を生み出し、ときには「ハルシネーション」と呼ばれる想定外のイメージを生成する AI。古来の陶芸と最新の AI。両者をつなぐ鍵は、偶然性を創造の力に変えることにあるのではないでしょうか。",
+    "「Glazescape Project」は、このふたつのテクノロジーを融合し、釉薬の新しい可能性を探る研究開発プロジェクトです。活用するのは、産業技術総合研究所が長年にわたり蓄積してきた、2万点を超える「セラミックカラーデータベース」。データベースに含まれる釉薬の原材料や配合、焼成条件、化学組成と、それらによって生まれた焼き上がりの画像を、画像生成 AI に追加学習させています。",
+    "私たちが目指すのは、焼成結果を予測することだけではありません。人間の感性と AI の創造性が交わることで生まれる、もうひとつの陶芸体験。伝統的なものづくりを新しいテクノロジーで拡張し、誰もが自由に想像し、試し、偶然の美しさと出会える未来を探求していきます。",
   ],
 };
 

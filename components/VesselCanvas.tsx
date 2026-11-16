@@ -683,6 +683,13 @@ export type VesselCanvasProps = {
   pose?: VesselPose | null;
   /** pose の構図に着いたとき (pose を指定するたびに 1 回) */
   onPosed?: () => void;
+  /**
+   * 止め絵 (感覚でつくるの候補サムネイルなど)。変化があったときだけ描き直し、
+   * 回転・手での操作・床の影は付けない
+   */
+  still?: boolean;
+  /** 止め絵の向き (度)。深度画像の撮影角度 (lib/depth.ts) と同じ向きの yaw。still のときだけ使う */
+  stillYaw?: number;
 };
 
 export default function VesselCanvas({
@@ -701,7 +708,16 @@ export default function VesselCanvas({
   points = null,
   pose = null,
   onPosed,
+  still = false,
+  stillYaw = 0,
 }: VesselCanvasProps) {
+  // 止め絵はカメラを回せないので、最初から stillYaw の向きに置く (PoseRig と同じく器ではなくカメラを逆に回す)
+  const theta = still ? (-stillYaw * Math.PI) / 180 : 0;
+  const cameraPosition: [number, number, number] = [
+    4.6 * Math.sin(theta),
+    0.7,
+    4.6 * Math.cos(theta),
+  ];
   const spec = resolveVesselSpec(shape, custom);
   const vesselHeight = spec.height * spec.scale * zoom;
   const bottomY = -vesselHeight / 2 - 0.02;
@@ -710,7 +726,8 @@ export default function VesselCanvas({
       className="vessel-canvas"
       style={CANVAS_STYLE}
       dpr={[1, 2]}
-      camera={{ position: [0, 0.7, 4.6], fov: CANVAS_FOV }}
+      frameloop={still ? "demand" : "always"}
+      camera={{ position: cameraPosition, fov: CANVAS_FOV }}
       gl={{ alpha: true, antialias: true }}
     >
       <ambientLight intensity={0.9} />
@@ -730,23 +747,27 @@ export default function VesselCanvas({
             lowPoly={lowPoly}
           />
         )}
-        <ContactShadows
-          position={[0, bottomY, 0]}
-          opacity={0.35}
-          scale={6}
-          blur={2.4}
-          far={2}
-        />
+        {!still && (
+          <ContactShadows
+            position={[0, bottomY, 0]}
+            opacity={0.35}
+            scale={6}
+            blur={2.4}
+            far={2}
+          />
+        )}
       </PoseRig>
-      <OrbitControls
-        enablePan={false}
-        enableZoom={false}
-        enableRotate={!pose}
-        autoRotate={autoRotate && !pose}
-        autoRotateSpeed={autoRotateSpeed}
-        minPolarAngle={Math.PI / 4}
-        maxPolarAngle={(Math.PI * 3) / 4}
-      />
+      {!still && (
+        <OrbitControls
+          enablePan={false}
+          enableZoom={false}
+          enableRotate={!pose}
+          autoRotate={autoRotate && !pose}
+          autoRotateSpeed={autoRotateSpeed}
+          minPolarAngle={Math.PI / 4}
+          maxPolarAngle={(Math.PI * 3) / 4}
+        />
+      )}
     </Canvas>
   );
 }

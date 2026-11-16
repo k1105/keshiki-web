@@ -7,10 +7,10 @@ import type { CustomVessel } from "@/lib/vessels";
 const W = 830;
 const H = 830;
 const AXIS_X = W / 2; // 回転軸の x 座標（パネル中央）
-const AXIS_TOP = 96;
-const AXIS_BOTTOM = 766;
-const INK = "#38204b";
-const PINK = "#fc3f9a";
+const AXIS_TOP = 106;
+const AXIS_BOTTOM = 686;
+const INK = "#39224c";
+const PINK = "#e26a98";
 
 type Pt = { x: number; y: number };
 
@@ -73,19 +73,29 @@ function strokeToVessel(raw: Pt[]): CustomVessel | null {
   return { profile, height: height * scale };
 }
 
+/**
+ * 一筆書きでかたちを描く。線を描き終えてもすぐには決めず、OK で確定、Clear で描き直す
+ */
 export default function ProfileSketcher({
   onShapeDrawn,
   hint,
   tooShortText,
+  clearLabel,
+  okLabel,
 }: {
   onShapeDrawn: (v: CustomVessel) => void;
   hint: string;
   tooShortText: string;
+  clearLabel: string;
+  okLabel: string;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const strokeRef = useRef<Pt[]>([]);
   const drawingRef = useRef(false);
   const [tooShort, setTooShort] = useState(false);
+  // 描き終えた線からつくった形 (OK で確定する)。線が無い・短すぎるときは null
+  const [drawn, setDrawn] = useState<CustomVessel | null>(null);
+  const [hasStroke, setHasStroke] = useState(false);
 
   const redraw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -93,15 +103,21 @@ export default function ProfileSketcher({
     if (!ctx) return;
     ctx.clearRect(0, 0, W, H);
 
-    // 回転軸
+    // 回転軸: 細い破線と両端の丸
     ctx.beginPath();
-    ctx.setLineDash([9, 9]);
+    ctx.setLineDash([7, 5]);
     ctx.moveTo(AXIS_X, AXIS_TOP);
     ctx.lineTo(AXIS_X, AXIS_BOTTOM);
     ctx.strokeStyle = PINK;
-    ctx.lineWidth = 4;
+    ctx.lineWidth = 1;
     ctx.stroke();
     ctx.setLineDash([]);
+    ctx.fillStyle = PINK;
+    for (const y of [AXIS_TOP, AXIS_BOTTOM]) {
+      ctx.beginPath();
+      ctx.arc(AXIS_X, y, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
     const stroke = strokeRef.current;
     if (stroke.length === 0) return;
@@ -114,7 +130,7 @@ export default function ProfileSketcher({
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     ctx.strokeStyle = INK;
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 2;
     ctx.stroke();
   }, []);
 
@@ -144,6 +160,8 @@ export default function ProfileSketcher({
     drawingRef.current = true;
     strokeRef.current = [toLocal(e)];
     setTooShort(false);
+    setDrawn(null);
+    setHasStroke(true);
     redraw();
   };
 
@@ -162,12 +180,22 @@ export default function ProfileSketcher({
     drawingRef.current = false;
     const vessel = strokeToVessel(strokeRef.current);
     if (vessel) {
-      onShapeDrawn(vessel);
+      setDrawn(vessel);
     } else {
       strokeRef.current = [];
+      setHasStroke(false);
       setTooShort(true);
       redraw();
     }
+  };
+
+  const clear = () => {
+    drawingRef.current = false;
+    strokeRef.current = [];
+    setDrawn(null);
+    setHasStroke(false);
+    setTooShort(false);
+    redraw();
   };
 
   return (
@@ -182,6 +210,19 @@ export default function ProfileSketcher({
       />
       <div className={`sketch-hint ${tooShort ? "is-warn" : ""}`}>
         {tooShort ? tooShortText : hint}
+      </div>
+      <div className="panel-foot">
+        <button type="button" className="btn is-dark" disabled={!hasStroke} onClick={clear}>
+          {clearLabel}
+        </button>
+        <button
+          type="button"
+          className="btn is-dark"
+          disabled={!drawn}
+          onClick={() => drawn && onShapeDrawn(drawn)}
+        >
+          {okLabel}
+        </button>
       </div>
     </div>
   );
